@@ -110,45 +110,60 @@ _ = set_locale_ptbr()
 
 def filtro_periodo_global(series_dt):
     st.sidebar.header("📅 Período")
-    series_dt = pd.to_datetime(series_dt, errors="coerce").dropna()
-    if series_dt.empty:
+    s = pd.to_datetime(series_dt, errors="coerce").dropna()
+    if s.empty:
+        st.sidebar.info("Sem datas válidas para filtrar.")
         return None, None
-    hoje = date.today()
-    ano_atual = hoje.year
-    dmin = max(series_dt.min().date(), date(ano_atual, 1, 1))
-    dmax = min(series_dt.max().date(), date(ano_atual, 12, 31))
+
+    dmin = s.min().date()
+    dmax = s.max().date()
+    anos = sorted(s.dt.year.unique())
+    ano_sel = st.sidebar.selectbox("Ano para botões", anos, index=len(anos)-1, key="ano_btns")
+
     nomes_pt = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
     cols = st.sidebar.columns(2)
     for i, mes in enumerate(range(1, 13)):
         col = cols[i % 2]
-        label = nomes_pt[mes-1]
-        if col.button(label, key=f"btn_mes_{ano_atual}_{mes}"):
-            ini = date(ano_atual, mes, 1)
-            fim_dia = calendar.monthrange(ano_atual, mes)[1]
-            fim = date(ano_atual, mes, fim_dia)
+        if col.button(nomes_pt[mes-1], key=f"btn_mes_{ano_sel}_{mes}"):
+            from calendar import monthrange
+            ini = date(ano_sel, mes, 1)
+            fim = date(ano_sel, mes, monthrange(ano_sel, mes)[1])
             ini = max(ini, dmin)
             fim = min(fim, dmax)
-            st.session_state["data_ini"] = ini
-            st.session_state["data_fim"] = fim
-            st.rerun()
-    if st.sidebar.button("Período do ano atual", key="btn_all_year"):
+            if ini <= fim:
+                st.session_state["data_ini"] = ini
+                st.session_state["data_fim"] = fim
+                st.rerun()
+
+    c1, c2 = st.sidebar.columns(2)
+    if c1.button("Ano selecionado", key="btn_full_year"):
+        ini = date(ano_sel, 1, 1)
+        fim = date(ano_sel, 12, 31)
+        st.session_state["data_ini"] = max(ini, dmin)
+        st.session_state["data_fim"] = min(fim, dmax)
+        st.rerun()
+    if c2.button("Todo o período", key="btn_all_data"):
         st.session_state["data_ini"] = dmin
         st.session_state["data_fim"] = dmax
         st.rerun()
+
     data_ini = st.session_state.get("data_ini", dmin)
     data_fim = st.session_state.get("data_fim", dmax)
     data_ini = max(min(data_ini, dmax), dmin)
     data_fim = max(min(data_fim, dmax), dmin)
     if data_ini > data_fim:
         data_ini, data_fim = dmin, dmax
+
     c1, c2 = st.sidebar.columns(2)
     dini = c1.date_input("Início", value=data_ini, min_value=dmin, max_value=dmax, key="ini_input")
     dfim = c2.date_input("Fim", value=data_fim, min_value=dmin, max_value=dmax, key="fim_input")
     if dini > dfim:
         dini, dfim = dmin, dmax
+
     st.session_state["data_ini"], st.session_state["data_fim"] = dini, dfim
     st.sidebar.caption(f"Filtrando: {dini.strftime('%d/%m/%Y')} → {dfim.strftime('%d/%m/%Y')}")
     return dini, dfim
+
 
 def carregar_primeira_aba_xlsx(arquivo, caminho):
     import zipfile
