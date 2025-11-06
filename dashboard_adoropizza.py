@@ -411,7 +411,7 @@ with tab3:
 
         def clean_nome_prod_hist(nome_series, cat_series):
             s = nome_series.astype(str)
-            s = s.str.replace(r"^\s*Pizza\s+","",regex=True)
+            s = s.str.replace(r"^PIZZA\s+", "", regex=True, case=False)
             s = normalize_sizes(s)
             mask_sucos = cat_series.astype(str).str.upper().eq("SUCOS")
             sabores = r"(LARANJA|ABACAXI|MARACUJ[ÁA])"
