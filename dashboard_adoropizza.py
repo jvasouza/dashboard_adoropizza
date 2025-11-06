@@ -281,6 +281,18 @@ with tab1:
             hovertemplate="Data: %{x|%d/%m/%Y}<br>Dia da semana: %{customdata[0]}<br>Receita: R$ %{y:.2f}",
             customdata=fat_dia[["dow"]].to_numpy()
         )
+        # após criar fat_dia e fig_fat
+        periodo_dias = (pd.to_datetime(data_fim) - pd.to_datetime(data_ini)).days + 1
+        if periodo_dias > 180 and len(fat_dia) > 1:
+            fat_dia_sorted = fat_dia.sort_values("dia").copy()
+            fat_dia_sorted["mm30"] = fat_dia_sorted["valor_liq"].rolling(30, min_periods=1).mean()
+            fig_fat.add_scatter(
+                x=fat_dia_sorted["dia"],
+                y=fat_dia_sorted["mm30"],
+                mode="lines",
+                name="Média móvel (30 dias)",
+    )
+
         st.plotly_chart(fig_fat, use_container_width=True, key="fat_linha_dia")
         st.divider()
         col_a, col_b = st.columns(2)
