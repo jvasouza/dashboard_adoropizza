@@ -187,7 +187,6 @@ def sem_acentos_upper(s):
 def padroniza_pizza_nome_tamanho(nome):
     nome = sem_acentos_upper(nome)
     if nome.startswith("PIZZA "):
-        nome = nome[6:].strip()
     tam = None
     if nome.endswith(" GRANDE"):
         nome = nome[:-7].strip(); tam = "G"
