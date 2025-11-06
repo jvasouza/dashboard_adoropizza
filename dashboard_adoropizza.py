@@ -185,17 +185,12 @@ def sem_acentos_upper(s):
     return " ".join(s.split())
 
 def padroniza_pizza_nome_tamanho(nome):
-    nome = sem_acentos_upper(nome)
+    nome = str(nome).strip()
     if nome.startswith("PIZZA "):
-    tam = None
-    if nome.endswith(" GRANDE"):
-        nome = nome[:-7].strip(); tam = "G"
-    elif nome.endswith(" MEDIA"):
-        nome = nome[:-6].strip(); tam = "M"
-    elif nome.endswith(" PEQUENA"):
-        nome = nome[:-8].strip(); tam = "P"
-    if tam:
-        nome = f"{nome} {tam}"
+        nome = nome.replace("PIZZA ", "", 1)
+    nome = nome.replace(" Grande", " G")
+    nome = nome.replace(" Média", " M")
+    nome = nome.replace(" Pequena", " P")
     return nome
 
 def nomes_legiveis(df):
