@@ -244,7 +244,7 @@ if not data_series.empty and data_series.notna().any():
 else:
     data_ini, data_fim = None, None
 
-tab1, tab2, tab3 = st.tabs(["Faturamento", "Pedidos", "CMV"])
+tab1, tab2, tab3, tab4 = st.tabs(["Faturamento", "Pedidos", "CMV", "Metas"])
 
 with tab1:
     df = carregar_primeira_aba_xlsx(arq_contas, None)
@@ -598,3 +598,90 @@ with tab3:
             st.divider()
             st.subheader("Produtos sem custo mapeado")
             st.dataframe(nomes_legiveis(diag_sem_custo.reset_index(drop=True)), use_container_width=True, hide_index=True)
+
+            
+with tab4:
+    df_meta = carregar_primeira_aba_xlsx(arq_contas, None)
+    if not carregou(df_meta):
+        st.info("Carregue a planilha de Contas a Receber para visualizar a aba Metas.")
+    else:
+        df_meta = df_meta.copy()
+        df_meta.columns = df_meta.columns.str.strip()
+        df_meta = df_meta.rename(columns={
+            "Cód. Pedido": "cod_pedido",
+            "Valor Líq.": "valor_liq",
+            "Forma Pagamento": "forma_pagamento",
+            "Crédito": "data",
+            "Total Pedido": "total_pedido"
+        })
+        df_meta["data"] = pd.to_datetime(df_meta["data"], errors="coerce")
+        df_meta["valor_liq"] = pd.to_numeric(df_meta["valor_liq"], errors="coerce")
+        df_meta = df_meta.dropna(subset=["data", "valor_liq", "cod_pedido"]).copy()
+
+        df_meta["semana"] = df_meta["data"].dt.to_period("W-MON").dt.start_time
+        resumo_sem = (
+            df_meta.groupby("semana", as_index=False)
+            .agg(
+                receita=("valor_liq", "sum"),
+                pedidos=("cod_pedido", "nunique")
+            )
+            .sort_values("semana")
+        )
+
+        if resumo_sem.empty or len(resumo_sem) < 1:
+            st.info("Dados insuficientes para cálculo de metas semanais.")
+        else:
+            semana_atual = resumo_sem["semana"].max()
+            semanas_passadas = resumo_sem[resumo_sem["semana"] < semana_atual]
+
+            if len(semanas_passadas) == 0:
+                meta_semana = float(resumo_sem["receita"].mean())
+            else:
+                ult4 = semanas_passadas.tail(4)
+                if len(ult4) > 0:
+                    meta_semana = float(ult4["receita"].mean())
+                else:
+                    meta_semana = float(semanas_passadas["receita"].mean())
+
+            atual_row = resumo_sem[resumo_sem["semana"] == semana_atual]
+            realizado_semana = float(atual_row["receita"].iloc[0]) if not atual_row.empty else 0.0
+            progresso = (realizado_semana / meta_semana * 100) if meta_semana else 0.0
+
+            if progresso >= 110:
+                status = "Semana excelente"
+            elif progresso >= 95:
+                status = "Semana dentro da meta"
+            elif progresso >= 85:
+                status = "Semana de atenção"
+            else:
+                status = "Semana crítica"
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Meta da Semana (R$)", br_money(meta_semana))
+            c2.metric("Realizado na Semana (R$)", br_money(realizado_semana))
+            c3.metric("% da Meta", f"{progresso:,.1f}%")
+            st.caption(status)
+
+            st.divider()
+
+            st.subheader("Faturamento por Semana")
+            fig_sem = px.line(
+                resumo_sem.tail(12),
+                x="semana",
+                y="receita",
+                markers=True,
+                labels={"semana": "Início da Semana", "receita": "Receita (R$)"}
+            )
+            fig_sem = estilizar_fig(fig_sem)
+            fig_sem.update_xaxes(tickformat="%d/%m/%Y")
+            st.plotly_chart(fig_sem, use_container_width=True, key="metas_linha_semana")
+
+            st.subheader("Resumo Semanal")
+            df_sem_exibe = resumo_sem.tail(12).copy()
+            df_sem_exibe = df_sem_exibe.rename(columns={"semana": "data"})
+            st.dataframe(
+                nomes_legiveis(df_sem_exibe.reset_index(drop=True)),
+                use_container_width=True,
+                hide_index=True
+            )
+
