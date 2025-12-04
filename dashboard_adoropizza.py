@@ -95,6 +95,8 @@ arq_custo_bebidas = DATA / "custo bebidas.xlsx"
 arq_custo_pizzas = DATA / "custo_pizzas.xlsx"
 arq_custos_fixos = DATA / "custos fixos.xlsx"
 arq_compras = DATA / "compras.xlsx"
+arq_ads_manual = DATA / "relatorio ads.xlsx"
+arq_ads_manager = DATA / "relatorio-04-12-25.xlsx"
 
 def set_locale_ptbr():
     for loc in ("pt_BR.UTF-8", "pt_BR.utf8", "pt_BR", "Portuguese_Brazil.1252"):
@@ -244,7 +246,7 @@ if not data_series.empty and data_series.notna().any():
 else:
     data_ini, data_fim = None, None
 
-tab1, tab2, tab3, tab4 = st.tabs(["Faturamento", "Pedidos", "CMV", "Metas"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["Faturamento", "Pedidos", "CMV", "Metas", "Promoções"])
 
 with tab1:
     df = carregar_primeira_aba_xlsx(arq_contas, None)
@@ -706,3 +708,194 @@ with tab4:
                     use_container_width=True,
                     hide_index=True
                 )
+
+with tab5:
+    df_ads = carregar_primeira_aba_xlsx(arq_ads_manager, None)
+    itens_ads = carregar_primeira_aba_xlsx(arq_itens, None)
+    df_contas_ads = carregar_primeira_aba_xlsx(arq_contas, None)
+
+    if not carregou(df_ads):
+        st.info("Carregue o relatório do Facebook Ads (relatorio-04-12-25.xlsx na pasta data) para visualizar a aba Promoções.")
+    elif not carregou(itens_ads) or not carregou(df_contas_ads):
+        st.info("Carregue as planilhas de Itens Vendidos e Contas a Receber para visualizar a aba Promoções.")
+    else:
+        df_ads = df_ads.copy()
+        df_ads.columns = df_ads.columns.str.strip()
+        df_ads = df_ads.rename(columns={
+            "Nome do conjunto de anúncios": "adset",
+            "Dia": "dia",
+            "Valor usado (BRL)": "gasto",
+            "Cliques no link": "cliques",
+            "Visualizações da página de destino": "lp_views",
+            "Alcance": "alcance",
+            "Impressões": "impressoes",
+            "CTR (taxa de cliques no link)": "ctr"
+        })
+        df_ads["dia"] = pd.to_datetime(df_ads["dia"], errors="coerce").dt.date
+        df_ads["gasto"] = pd.to_numeric(df_ads["gasto"], errors="coerce").fillna(0.0)
+        df_ads["cliques"] = pd.to_numeric(df_ads["cliques"], errors="coerce").fillna(0.0)
+        df_ads["lp_views"] = pd.to_numeric(df_ads["lp_views"], errors="coerce").fillna(0.0)
+        df_ads["alcance"] = pd.to_numeric(df_ads["alcance"], errors="coerce").fillna(0.0)
+        df_ads["impressoes"] = pd.to_numeric(df_ads["impressoes"], errors="coerce").fillna(0.0)
+        df_ads["ctr"] = pd.to_numeric(df_ads["ctr"], errors="coerce").fillna(0.0)
+        df_ads = df_ads.dropna(subset=["dia", "adset"]).copy()
+
+        if data_ini is not None and data_fim is not None:
+            mask_ads_periodo = (df_ads["dia"] >= data_ini) & (df_ads["dia"] <= data_fim)
+            df_ads = df_ads.loc[mask_ads_periodo].copy()
+
+        itens_ads = itens_ads.copy()
+        itens_ads.columns = itens_ads.columns.str.strip()
+        itens_ads = itens_ads.rename(columns={
+            "Data/Hora Item": "data_item",
+            "Qtd.": "qtd",
+            "Valor. Tot. Item": "valor_tot",
+            "Nome Prod": "nome_prod",
+            "Cat. Prod.": "cat_prod",
+            "Cod. Ped.": "cod_ped",
+            "Valor Prod": "valor_prod"
+        })
+        itens_ads["data_item"] = pd.to_datetime(itens_ads["data_item"], errors="coerce")
+        itens_ads["dia"] = itens_ads["data_item"].dt.date
+        itens_ads["qtd"] = pd.to_numeric(itens_ads["qtd"], errors="coerce").fillna(0.0)
+        itens_ads["valor_tot"] = pd.to_numeric(itens_ads["valor_tot"], errors="coerce").fillna(0.0)
+        itens_ads["valor_prod"] = pd.to_numeric(itens_ads["valor_prod"], errors="coerce")
+        itens_ads = itens_ads.dropna(subset=["dia"]).copy()
+
+        if data_ini is not None and data_fim is not None:
+            mask_itens_periodo = (itens_ads["dia"] >= data_ini) & (itens_ads["dia"] <= data_fim)
+            itens_ads = itens_ads.loc[mask_itens_periodo].copy()
+
+        itens_ads["produto_chave"] = itens_ads["nome_prod"].apply(sem_acentos_upper)
+        df_ads["produto_chave"] = df_ads["adset"].apply(sem_acentos_upper)
+
+        precos_normais = (
+            itens_ads.dropna(subset=["valor_prod"])
+            .groupby("produto_chave", as_index=False)["valor_prod"]
+            .median()
+            .rename(columns={"valor_prod": "preco_normal"})
+        )
+        itens_ads = itens_ads.merge(precos_normais, on="produto_chave", how="left")
+        itens_ads["is_promo_price"] = (
+            itens_ads["valor_prod"].notna()
+            & itens_ads["preco_normal"].notna()
+            & (itens_ads["valor_prod"] < itens_ads["preco_normal"] * 0.99)
+        )
+
+        vendas_prod = (
+            itens_ads.groupby(["dia", "produto_chave"], as_index=False)
+            .agg(
+                qtd_vendida=("qtd", "sum"),
+                receita=("valor_tot", "sum"),
+                promo_price=("is_promo_price", "max")
+            )
+        )
+
+        df_ads_merged = df_ads.merge(vendas_prod, on=["dia", "produto_chave"], how="left")
+
+        df_contas_ads = df_contas_ads.copy()
+        df_contas_ads.columns = df_contas_ads.columns.str.strip()
+        df_contas_ads = df_contas_ads.rename(columns={
+            "Cód. Pedido": "cod_pedido",
+            "Valor Líq.": "valor_liq",
+            "Crédito": "data"
+        })
+        df_contas_ads["data"] = pd.to_datetime(df_contas_ads["data"], errors="coerce")
+        df_contas_ads["valor_liq"] = pd.to_numeric(df_contas_ads["valor_liq"], errors="coerce")
+        df_contas_ads = df_contas_ads.dropna(subset=["data", "valor_liq"]).copy()
+
+        if data_ini is not None and data_fim is not None:
+            mask_receita_ads = (df_contas_ads["data"] >= pd.to_datetime(data_ini)) & (df_contas_ads["data"] <= pd.to_datetime(data_fim))
+            df_contas_ads = df_contas_ads.loc[mask_receita_ads].copy()
+
+        receita_total_periodo = float(df_contas_ads["valor_liq"].sum()) if not df_contas_ads.empty else 0.0
+
+        df_sponsored = df_ads_merged[df_ads_merged["gasto"] > 0].copy()
+        df_sponsored["receita"] = df_sponsored["receita"].fillna(0.0)
+
+        gasto_total = float(df_sponsored["gasto"].sum()) if not df_sponsored.empty else 0.0
+        receita_promo_sponsored = float(df_sponsored["receita"].sum()) if not df_sponsored.empty else 0.0
+        pct_fat_sponsored = (receita_promo_sponsored / receita_total_periodo * 100.0) if receita_total_periodo else 0.0
+
+        idx_ads = pd.MultiIndex.from_frame(
+            df_ads.loc[df_ads["gasto"] > 0, ["dia", "produto_chave"]].drop_duplicates()
+        )
+        mask_sponsored_keys = vendas_prod.set_index(["dia", "produto_chave"]).index.isin(idx_ads)
+        promo_organica = vendas_prod[(vendas_prod["promo_price"]) & (~mask_sponsored_keys)].copy()
+        receita_promo_organica = float(promo_organica["receita"].sum()) if not promo_organica.empty else 0.0
+        pct_fat_organica = (receita_promo_organica / receita_total_periodo * 100.0) if receita_total_periodo else 0.0
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Gasto total em anúncios (R$)", br_money(gasto_total))
+        c2.metric("Receita ligada a anúncios (R$)", br_money(receita_promo_sponsored))
+        c3.metric("% fat. promo patrocinada", f"{pct_fat_sponsored:.1f}%")
+        c4.metric("% fat. promo orgânica", f"{pct_fat_organica:.1f}%")
+
+        st.divider()
+        st.subheader("Resumo por produto anunciado (promoções patrocinadas)")
+
+        if df_sponsored.empty:
+            st.info("Nenhum gasto em anúncios no período selecionado.")
+        else:
+            resumo_prod = (
+                df_sponsored.groupby("produto_chave", as_index=False)
+                .agg(
+                    gasto_total=("gasto", "sum"),
+                    receita_promo=("receita", "sum"),
+                    dias_ativos=("dia", "nunique"),
+                    cliques=("cliques", "sum"),
+                    lp_views=("lp_views", "sum")
+                )
+            )
+            resumo_prod["roi"] = np.where(
+                resumo_prod["gasto_total"] > 0,
+                resumo_prod["receita_promo"] / resumo_prod["gasto_total"],
+                np.nan
+            )
+            resumo_prod = resumo_prod.sort_values("receita_promo", ascending=False).reset_index(drop=True)
+
+            fig_promos = px.bar(
+                resumo_prod,
+                x="produto_chave",
+                y="receita_promo",
+                labels={"produto_chave": "Produto", "receita_promo": "Receita ligada ao anúncio (R$)"}
+            )
+            fig_promos = estilizar_fig(fig_promos)
+            st.plotly_chart(fig_promos, use_container_width=True, key="promo_barras_produto")
+
+            df_exibe = resumo_prod.rename(columns={
+                "produto_chave": "produto",
+                "gasto_total": "gasto",
+                "receita_promo": "receita",
+                "dias_ativos": "dias",
+                "cliques": "cliques",
+                "lp_views": "lp_views",
+                "roi": "roi"
+            })
+            st.dataframe(
+                nomes_legiveis(df_exibe.reset_index(drop=True)),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        st.divider()
+        st.subheader("Promoções orgânicas (sem anúncio pago, preço abaixo do normal)")
+
+        if promo_organica.empty:
+            st.info("Nenhuma promoção orgânica detectada no período selecionado.")
+        else:
+            resumo_org = (
+                promo_organica.groupby("produto_chave", as_index=False)
+                .agg(
+                    receita=("receita", "sum"),
+                    dias=("dia", "nunique")
+                )
+                .sort_values("receita", ascending=False)
+                .reset_index(drop=True)
+            )
+            df_org_exibe = resumo_org.rename(columns={"produto_chave": "produto"})
+            st.dataframe(
+                nomes_legiveis(df_org_exibe.reset_index(drop=True)),
+                use_container_width=True,
+                hide_index=True
+            )
