@@ -618,7 +618,9 @@ with tab4:
         df_meta["valor_liq"] = pd.to_numeric(df_meta["valor_liq"], errors="coerce")
         df_meta = df_meta.dropna(subset=["data", "valor_liq", "cod_pedido"]).copy()
 
-        df_meta["semana"] = df_meta["data"].dt.to_period("W-MON").dt.start_time
+        df_meta["semana"] = df_meta["data"] + pd.to_timedelta((6 - df_meta["data"].dt.weekday) % 7, unit="D")
+        df_meta["semana"] = df_meta["semana"].dt.normalize()
+
         resumo_sem = (
             df_meta.groupby("semana", as_index=False)
             .agg(
@@ -629,59 +631,78 @@ with tab4:
         )
 
         if resumo_sem.empty or len(resumo_sem) < 1:
-            st.info("Dados insuficientes para cálculo de metas semanais.")
+            st.info("Dados insuficientes para análise semanal.")
         else:
-            semana_atual = resumo_sem["semana"].max()
-            semanas_passadas = resumo_sem[resumo_sem["semana"] < semana_atual]
+            hoje = pd.to_datetime(date.today())
+            fim_semana_atual = hoje + pd.to_timedelta((6 - hoje.weekday()) % 7, unit="D")
+            fim_semana_atual = fim_semana_atual.normalize()
 
-            if len(semanas_passadas) == 0:
-                meta_semana = float(resumo_sem["receita"].mean())
+            resumo_passado = resumo_sem[resumo_sem["semana"] < fim_semana_atual].copy()
+
+            if resumo_passado.empty:
+                st.info("Ainda não há semanas fechadas para análise.")
             else:
-                ult4 = semanas_passadas.tail(4)
-                if len(ult4) > 0:
-                    meta_semana = float(ult4["receita"].mean())
+                semanas_ordenadas = resumo_passado["semana"].sort_values().unique()
+                semana_passada = semanas_ordenadas[-1]
+                linha_passada = resumo_passado[resumo_passado["semana"] == semana_passada]
+
+                receita_passada = float(linha_passada["receita"].iloc[0])
+                pedidos_passada = int(linha_passada["pedidos"].iloc[0])
+
+                diff_abs = None
+                diff_pct = None
+
+                if len(semanas_ordenadas) >= 2:
+                    semana_retrasada = semanas_ordenadas[-2]
+                    linha_retrasada = resumo_passado[resumo_passado["semana"] == semana_retrasada]
+                    receita_retrasada = float(linha_retrasada["receita"].iloc[0])
+
+                    diff_abs = receita_passada - receita_retrasada
+                    if receita_retrasada != 0:
+                        diff_pct = diff_abs / receita_retrasada * 100
+                    else:
+                        diff_pct = 0.0
+
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Semana passada (R$)", br_money(receita_passada))
+                c2.metric("Pedidos semana passada", f"{pedidos_passada}")
+
+                if diff_abs is not None:
+                    c3.metric(
+                        "Variação vs semana retrasada",
+                        br_money(diff_abs),
+                        f"{diff_pct:,.1f}%"
+                    )
                 else:
-                    meta_semana = float(semanas_passadas["receita"].mean())
+                    c3.metric("Variação vs semana retrasada", "-", "-")
 
-            atual_row = resumo_sem[resumo_sem["semana"] == semana_atual]
-            realizado_semana = float(atual_row["receita"].iloc[0]) if not atual_row.empty else 0.0
-            progresso = (realizado_semana / meta_semana * 100) if meta_semana else 0.0
+                if diff_abs is not None:
+                    if diff_abs > 0:
+                        st.caption(f"A semana passada faturou {br_money(diff_abs)} a mais (+{diff_pct:,.1f}%) que a semana retrasada.")
+                    elif diff_abs < 0:
+                        st.caption(f"A semana passada faturou {br_money(-diff_abs)} a menos ({diff_pct:,.1f}%) que a semana retrasada.")
+                    else:
+                        st.caption("Semana passada teve o mesmo faturamento da semana retrasada.")
 
-            if progresso >= 110:
-                status = "Semana excelente"
-            elif progresso >= 95:
-                status = "Semana dentro da meta"
-            elif progresso >= 85:
-                status = "Semana de atenção"
-            else:
-                status = "Semana crítica"
+                st.divider()
 
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Meta da Semana (R$)", br_money(meta_semana))
-            c2.metric("Realizado na Semana (R$)", br_money(realizado_semana))
-            c3.metric("% da Meta", f"{progresso:,.1f}%")
-            st.caption(status)
+                st.subheader("Faturamento por Semana (histórico)")
+                fig_sem = px.line(
+                    resumo_passado.tail(12),
+                    x="semana",
+                    y="receita",
+                    markers=True,
+                    labels={"semana": "Fim da Semana (domingo)", "receita": "Receita (R$)"}
+                )
+                fig_sem = estilizar_fig(fig_sem)
+                fig_sem.update_xaxes(tickformat="%d/%m/%Y")
+                st.plotly_chart(fig_sem, use_container_width=True, key="metas_linha_semana")
 
-            st.divider()
-
-            st.subheader("Faturamento por Semana")
-            fig_sem = px.line(
-                resumo_sem.tail(12),
-                x="semana",
-                y="receita",
-                markers=True,
-                labels={"semana": "Início da Semana", "receita": "Receita (R$)"}
-            )
-            fig_sem = estilizar_fig(fig_sem)
-            fig_sem.update_xaxes(tickformat="%d/%m/%Y")
-            st.plotly_chart(fig_sem, use_container_width=True, key="metas_linha_semana")
-
-            st.subheader("Resumo Semanal")
-            df_sem_exibe = resumo_sem.tail(12).copy()
-            df_sem_exibe = df_sem_exibe.rename(columns={"semana": "data"})
-            st.dataframe(
-                nomes_legiveis(df_sem_exibe.reset_index(drop=True)),
-                use_container_width=True,
-                hide_index=True
-            )
-
+                st.subheader("Resumo Semanal")
+                df_sem_exibe = resumo_passado.tail(12).copy()
+                df_sem_exibe = df_sem_exibe.rename(columns={"semana": "data"})
+                st.dataframe(
+                    nomes_legiveis(df_sem_exibe.reset_index(drop=True)),
+                    use_container_width=True,
+                    hide_index=True
+                )
