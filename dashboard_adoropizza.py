@@ -1054,39 +1054,59 @@ with tab5:
 
         st.subheader("Rodízio")
 
-        if serie_rodizio.empty:
-            st.info("Nenhum lançamento de rodízio encontrado no período selecionado.")
-        else:
-            fig_rod = go.Figure()
+    if serie_rodizio.empty:
+        st.info("Nenhum lançamento de rodízio encontrado no período selecionado.")
+    else:
+        serie_plot = serie_rodizio.copy()
+        serie_plot["dia"] = pd.to_datetime(serie_plot["dia"])
+
+        mapa_semana = {
+            0: "Segunda",
+            1: "Terça",
+            2: "Quarta",
+            3: "Quinta",
+            4: "Sexta",
+            5: "Sábado",
+            6: "Domingo"
+        }
+        serie_plot["dia_semana"] = serie_plot["dia"].dt.dayofweek.map(mapa_semana)
+
+        fig_rod = go.Figure()
+        fig_rod.add_trace(
+            go.Scatter(
+                x=serie_plot["dia"],
+                y=serie_plot["qtde_total"],
+                mode="lines+markers",
+                name="Rodízio - total de clientes",
+                customdata=serie_plot["dia_semana"],
+                hovertemplate="Qtde: %{y}<br>Dia: %{customdata}<extra></extra>"
+            )
+        )
+
+        serie_promo = serie_plot[serie_plot["is_promo_day"]]
+        if not serie_promo.empty:
             fig_rod.add_trace(
                 go.Scatter(
-                    x=serie_rodizio["dia"],
-                    y=serie_rodizio["qtde_total"],
-                    mode="lines+markers",
-                    name="Rodízio - total de clientes"
+                    x=serie_promo["dia"],
+                    y=serie_promo["qtde_total"],
+                    mode="markers",
+                    name="Dia de rodízio promocional",
+                    marker=dict(size=10, symbol="circle-open"),
+                    customdata=serie_promo["dia_semana"],
+                    hovertemplate="Qtde: %{y}<br>Promo: %{customdata}<extra></extra>"
                 )
             )
-            serie_promo = serie_rodizio[serie_rodizio["is_promo_day"]]
-            if not serie_promo.empty:
-                fig_rod.add_trace(
-                    go.Scatter(
-                        x=serie_promo["dia"],
-                        y=serie_promo["qtde_total"],
-                        mode="markers",
-                        name="Dia de rodízio promocional",
-                        marker=dict(size=10, symbol="circle-open")
-                    )
-                )
 
-            fig_rod = estilizar_fig(fig_rod)
-            st.plotly_chart(fig_rod, use_container_width=True, key="rodizio_evolucao")
+        fig_rod = estilizar_fig(fig_rod)
+        st.plotly_chart(fig_rod, use_container_width=True, key="rodizio_evolucao")
 
-            st.markdown("**Detalhe por tipo de rodízio (por dia):**")
-            st.dataframe(
-                nomes_legiveis(tabela_rodizio.reset_index(drop=True)),
-                use_container_width=True,
-                hide_index=True
-            )
+        st.markdown("**Detalhe por tipo de rodízio (por dia):**")
+        st.dataframe(
+            nomes_legiveis(tabela_rodizio.reset_index(drop=True)),
+            use_container_width=True,
+            hide_index=True
+        )
+
 
         st.divider()
 
