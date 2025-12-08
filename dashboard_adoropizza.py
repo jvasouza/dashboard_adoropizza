@@ -9,6 +9,8 @@ import calendar
 import locale
 import plotly.io as pio
 import numpy as np
+import plotly.graph_objects as go
+
 
 def estilizar_fig(fig):
     fig.update_layout(
