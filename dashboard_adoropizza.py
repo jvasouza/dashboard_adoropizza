@@ -752,6 +752,7 @@ with tab5:
             return nome.strip()
 
         itens_ads["nome_prod"] = itens_ads["nome_prod"].apply(padronizar_nome_pizza)
+        itens_ads["nome_rodizio_chave"] = itens_ads["nome_prod"].apply(sem_acentos_upper)
 
         combo_config = {
             "pizzas_doce_p": [
@@ -767,15 +768,26 @@ with tab5:
                 "COCA COLA ZERO LATA",
                 "FANTA LARANJA LATA",
                 "FANTA UVA LATA"
+                "SPRITE LATA"
+                "SCHWEPPES CITRUS LATA"
+                "GUARANÁ ANTARTICA LATA"
             ],
             "refris_2l": [
                 "COCA COLA 2L",
                 "GUARANÁ ANTARTICA 2L",
-                "GUARANÁ ANTARCTICA 2L"
             ]
         }
 
-        nomes_rodizio_promo = [
+        rodizio_nomes_todos_norm = [
+            "RODIZIO DE PIZZA",
+            "RODIZIO DE PIZZA ( SEXTA FEIRA )",
+            "RODIZIO DIA DOS NAMORADOS",
+            "RODIZIO PROMOCAO",
+            "RODIZIO REFRI LIBERADO",
+            "RODIZIO INFANTIL PROMO"
+        ]
+
+        rodizio_nomes_promo_norm = [
             "RODIZIO PROMOCAO",
             "RODIZIO REFRI LIBERADO",
             "RODIZIO INFANTIL PROMO"
@@ -928,15 +940,17 @@ with tab5:
             return pd.DataFrame(linhas)
 
         def gerar_tabela_rodizio(df):
-            rod = df[df["nome_prod"].str.contains("RODIZIO", case=False, na=False)].copy()
+            mask_rod = df["nome_rodizio_chave"].isin(rodizio_nomes_todos_norm)
+            rod = df[mask_rod].copy()
             if rod.empty:
                 return pd.DataFrame(
                     columns=[
                         "dia",
                         "dia_semana",
                         "nome_prod",
+                        "qtde",
                         "valor",
-                        "qtde"
+                        "faturamento"
                     ]
                 )
 
@@ -962,10 +976,12 @@ with tab5:
                 )
             )
             agg["dia"] = agg["dia"].dt.date
+            agg["faturamento"] = agg["qtde"] * agg["valor"]
             return agg
 
         def gerar_series_rodizio(df):
-            rod = df[df["nome_prod"].str.contains("RODIZIO", case=False, na=False)].copy()
+            mask_rod = df["nome_rodizio_chave"].isin(rodizio_nomes_todos_norm)
+            rod = df[mask_rod].copy()
             if rod.empty:
                 return pd.DataFrame(columns=["dia", "qtde_total", "is_promo_day"])
 
@@ -978,7 +994,7 @@ with tab5:
             )
 
             dias_promo = (
-                rod[rod["nome_prod"].isin(nomes_rodizio_promo)]["dia"]
+                rod[rod["nome_rodizio_chave"].isin(rodizio_nomes_promo_norm)]["dia"]
                 .dropna()
                 .unique()
             )
@@ -1006,20 +1022,26 @@ with tab5:
                         "qtd_total",
                         "receita_promo",
                         "preço_medio_promo",
-                        "desconto_medio_pct"
+                        "desconto_medio_pct",
+                        "dias_promo",
+                        "qtd_media_dia",
+                        "receita_media_dia"
                     ]
                 )
+            prom["dia"] = pd.to_datetime(prom["dia"]).dt.date
             resumo = (
                 prom.groupby("nome_prod", as_index=False)
                 .agg(
                     qtd_total=("qtd", "sum"),
                     receita_promo=("valor_tot", "sum"),
                     preço_medio_promo=("preco_promocional", "mean"),
-                    desconto_medio_pct=("desconto_pct", lambda x: x.mean() * 100)
+                    desconto_medio_pct=("desconto_pct", lambda x: x.mean() * 100),
+                    dias_promo=("dia", "nunique")
                 )
-                .sort_values("receita_promo", ascending=False)
-                .reset_index(drop=True)
             )
+            resumo["qtd_media_dia"] = resumo["qtd_total"] / resumo["dias_promo"]
+            resumo["receita_media_dia"] = resumo["receita_promo"] / resumo["dias_promo"]
+            resumo = resumo.sort_values("receita_media_dia", ascending=False).reset_index(drop=True)
             return resumo
 
         itens_ads = marcar_itens_promocionais(itens_ads)
@@ -1030,7 +1052,6 @@ with tab5:
         resumo_combos = gerar_resumo_combos(df_combos)
         resumo_promos_pizza = gerar_resumo_promos_pizza(itens_ads)
 
-        # ----- RODÍZIO -----
         st.subheader("Rodízio")
 
         if serie_rodizio.empty:
@@ -1052,7 +1073,7 @@ with tab5:
                         x=serie_promo["dia"],
                         y=serie_promo["qtde_total"],
                         mode="markers",
-                        name="Dia de promoção",
+                        name="Dia de rodízio promocional",
                         marker=dict(size=10, symbol="circle-open")
                     )
                 )
@@ -1069,20 +1090,18 @@ with tab5:
 
         st.divider()
 
-        # ----- COMBOS -----
         st.subheader("Combos")
 
         if resumo_combos.empty:
             st.info("Nenhum combo detectado no período selecionado.")
         else:
-            fig_combos = px.bar(
+            fig_combos = px.pie(
                 resumo_combos,
-                x="tipo_combo",
-                y="qtd_total",
-                labels={"tipo_combo": "Tipo de combo", "qtd_total": "Quantidade vendida"}
+                names="tipo_combo",
+                values="qtd_total",
             )
             fig_combos = estilizar_fig(fig_combos)
-            st.plotly_chart(fig_combos, use_container_width=True, key="combos_barras")
+            st.plotly_chart(fig_combos, use_container_width=True, key="combos_pizza")
 
             st.dataframe(
                 nomes_legiveis(resumo_combos.reset_index(drop=True)),
@@ -1092,7 +1111,6 @@ with tab5:
 
         st.divider()
 
-        # ----- PROMOÇÕES DE PIZZAS -----
         st.subheader("Promoções de pizzas")
 
         if resumo_promos_pizza.empty:
@@ -1101,13 +1119,13 @@ with tab5:
             fig_promos = px.bar(
                 resumo_promos_pizza,
                 x="nome_prod",
-                y="receita_promo",
-                labels={"nome_prod": "Produto", "receita_promo": "Receita em promoção (R$)"}
+                y="receita_media_dia",
+                labels={"nome_prod": "Produto", "receita_media_dia": "Receita média por dia em promoção (R$)"}
             )
             fig_promos = estilizar_fig(fig_promos)
             st.plotly_chart(fig_promos, use_container_width=True, key="promo_barras_pizza")
 
-            st.markdown("**Ranking de promoções por faturamento:**")
+            st.markdown("**Ranking de promoções (ponderado por dia em promoção):**")
             st.dataframe(
                 nomes_legiveis(resumo_promos_pizza.reset_index(drop=True)),
                 use_container_width=True,
