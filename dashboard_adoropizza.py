@@ -727,62 +727,29 @@ with tab5:
             "Valor Prod": "valor_prod"
         })
 
-        def padronizar_nome_pizza(nome):
-            if not isinstance(nome, str):
-                return nome
-
-            nome = nome.strip()
-
-            if nome.startswith("PIZZA "):
-                nome = nome.replace("PIZZA ", "", 1)
-
-            nome = nome.replace(" Pequena", " P")
-            nome = nome.replace(" Média", " M")
-            nome = nome.replace(" Grande", " G")
-
-            return nome.strip()
-
-
         itens_ads["data_item"] = pd.to_datetime(itens_ads["data_item"], errors="coerce")
         itens_ads["dia"] = itens_ads["data_item"].dt.date
         itens_ads["qtd"] = pd.to_numeric(itens_ads["qtd"], errors="coerce").fillna(0.0)
         itens_ads["valor_tot"] = pd.to_numeric(itens_ads["valor_tot"], errors="coerce").fillna(0.0)
         itens_ads["valor_prod"] = pd.to_numeric(itens_ads["valor_prod"], errors="coerce")
         itens_ads = itens_ads.dropna(subset=["dia"]).copy()
-        itens_ads["nome_prod"] = itens_ads["nome_prod"].apply(padronizar_nome_pizza)
-
 
         if data_ini is not None and data_fim is not None:
             mask_itens_periodo = (itens_ads["dia"] >= data_ini) & (itens_ads["dia"] <= data_fim)
             itens_ads = itens_ads.loc[mask_itens_periodo].copy()
 
-        def marcar_itens_promocionais(df, limiar_desconto=0.8):
-            df = df.copy()
+        def padronizar_nome_pizza(nome):
+            if not isinstance(nome, str):
+                return nome
+            nome = nome.strip()
+            if nome.startswith("PIZZA "):
+                nome = nome.replace("PIZZA ", "", 1)
+            nome = nome.replace(" Pequena", " P")
+            nome = nome.replace(" Média", " M")
+            nome = nome.replace(" Grande", " G")
+            return nome.strip()
 
-            df["nome_prod"] = df["nome_prod"].apply(padronizar_nome_pizza)
-
-            qtd_inteira = df["qtd"].notna() & (df["qtd"] % 1 == 0)
-            multi_qtd = qtd_inteira & (df["qtd"] > 1)
-
-            preco_unit = (df["valor_tot"] / df["qtd"]).where(multi_qtd, df["valor_tot"])
-            df["preco_unit_real"] = preco_unit
-
-            mask_base = df["valor_prod"].notna() & qtd_inteira
-
-            df["desconto_pct"] = 0.0
-            df.loc[mask_base, "desconto_pct"] = (
-                1 - df.loc[mask_base, "preco_unit_real"] / df.loc[mask_base, "valor_prod"]
-            )
-
-            df["eh_promocao"] = (
-                mask_base
-                & (df["preco_unit_real"] < df["valor_prod"] * limiar_desconto)
-            )
-
-            df["preco_promocional"] = df["preco_unit_real"].where(df["eh_promocao"])
-
-            return df
-
+        itens_ads["nome_prod"] = itens_ads["nome_prod"].apply(padronizar_nome_pizza)
 
         combo_config = {
             "pizzas_doce_p": [
@@ -798,27 +765,69 @@ with tab5:
                 "COCA COLA ZERO LATA",
                 "FANTA LARANJA LATA",
                 "FANTA UVA LATA"
-                "SCHWEPPES CITRUS LATA"
-                "SPRITE LATA"
-                "GUARANÁ ANTARTICA LATA"
             ],
             "refris_2l": [
                 "COCA COLA 2L",
                 "GUARANÁ ANTARTICA 2L",
+                "GUARANÁ ANTARCTICA 2L"
             ]
         }
 
+        nomes_rodizio_promo = [
+            "RODIZIO PROMOCAO",
+            "RODIZIO REFRI LIBERADO",
+            "RODIZIO INFANTIL PROMO"
+        ]
+
+        def marcar_itens_promocionais(df, limiar_desconto=0.8):
+            df = df.copy()
+
+            df["preco_unit_real"] = np.nan
+            df["desconto_pct"] = 0.0
+            df["eh_promocao"] = False
+            df["preco_promocional"] = np.nan
+
+            mask_pizza = df["Tipo de Item"] == "Produto por tamanho"
+            sub = df.loc[mask_pizza].copy()
+
+            sub["qtd"] = pd.to_numeric(sub["qtd"], errors="coerce")
+            qtd_inteira = sub["qtd"].notna() & (sub["qtd"] % 1 == 0)
+            multi_qtd = qtd_inteira & (sub["qtd"] > 1)
+
+            preco_unit = pd.to_numeric(sub["Valor Un. Item"], errors="coerce")
+            preco_unit.loc[multi_qtd] = sub.loc[multi_qtd, "valor_tot"] / sub.loc[multi_qtd, "qtd"]
+            sub["preco_unit_real"] = preco_unit
+
+            mask_base = sub["valor_prod"].notna() & qtd_inteira & sub["preco_unit_real"].notna()
+
+            sub["desconto_pct"] = 0.0
+            sub.loc[mask_base, "desconto_pct"] = (
+                1 - sub.loc[mask_base, "preco_unit_real"] / sub.loc[mask_base, "valor_prod"]
+            )
+
+            sub["eh_promocao"] = False
+            cond_promo = mask_base & (sub["preco_unit_real"] < sub["valor_prod"] * limiar_desconto)
+            sub.loc[cond_promo, "eh_promocao"] = True
+            sub["preco_promocional"] = np.where(sub["eh_promocao"], sub["preco_unit_real"], np.nan)
+
+            df.loc[mask_pizza, "preco_unit_real"] = sub["preco_unit_real"]
+            df.loc[mask_pizza, "desconto_pct"] = sub["desconto_pct"]
+            df.loc[mask_pizza, "eh_promocao"] = sub["eh_promocao"]
+            df.loc[mask_pizza, "preco_promocional"] = sub["preco_promocional"]
+
+            return df
 
         def identificar_combos(df, combo_config):
-            df_combo = df[df["Tipo de Item"] == "Item de combo"].copy()
+            mask_combo = df["Tipo de Item"] == "Item de combo"
+            df_combo = df[mask_combo].copy()
             grupos = []
 
             for cod_ped, g in df_combo.groupby("cod_ped"):
                 nomes = g["nome_prod"]
                 cats = g["cat_prod"]
 
-                count_pizza_g = ((cats == "PIZZAS") & nomes.str.contains("Grande", na=False)).sum()
-                count_pizza_p = ((cats == "PIZZAS") & nomes.str.contains("Pequena", na=False)).sum()
+                count_pizza_g = ((cats == "PIZZAS") & nomes.str.endswith(" G")).sum()
+                count_pizza_p = ((cats == "PIZZAS") & nomes.str.endswith(" P")).sum()
                 count_pizza_doce_p = nomes.isin(combo_config.get("pizzas_doce_p", [])).sum()
                 count_refri_lata = nomes.isin(combo_config.get("refris_lata", [])).sum()
                 count_refri_2l = nomes.isin(combo_config.get("refris_2l", [])).sum()
@@ -878,7 +887,6 @@ with tab5:
 
                 def add_linha(run_start_local, prev_local):
                     subset = g[g["dia"].dt.date.between(run_start_local, prev_local)]
-
                     preco_vals = subset["preco_promocional"].dropna()
                     desc_vals = subset["desconto_pct"].dropna()
 
@@ -916,39 +924,202 @@ with tab5:
                 add_linha(run_start, prev)
 
             return pd.DataFrame(linhas)
-        
 
-        itens_ads = marcar_itens_promocionais(itens_ads)
-        df_combos = identificar_combos(itens_ads, combo_config)
-        tabela_promocoes = gerar_tabela_promocoes(itens_ads)
+        def gerar_tabela_rodizio(df):
+            rod = df[df["nome_prod"].str.contains("RODIZIO", case=False, na=False)].copy()
+            if rod.empty:
+                return pd.DataFrame(
+                    columns=[
+                        "dia",
+                        "dia_semana",
+                        "nome_prod",
+                        "valor",
+                        "qtde"
+                    ]
+                )
 
-        st.subheader("Tabela de promoções detectadas")
+            rod["valor_unit"] = pd.to_numeric(rod["Valor Un. Item"], errors="coerce")
+            rod["dia"] = pd.to_datetime(rod["dia"])
 
-        if tabela_promocoes.empty:
-            st.info("Nenhuma promoção detectada no período selecionado.")
-        else:
-            st.dataframe(
-                nomes_legiveis(tabela_promocoes.reset_index(drop=True)),
-                use_container_width=True,
-                hide_index=True
+            mapa_semana = {
+                0: "Segunda",
+                1: "Terça",
+                2: "Quarta",
+                3: "Quinta",
+                4: "Sexta",
+                5: "Sábado",
+                6: "Domingo"
+            }
+            rod["dia_semana"] = rod["dia"].dt.dayofweek.map(mapa_semana)
+
+            agg = (
+                rod.groupby(["dia", "dia_semana", "nome_prod"], as_index=False)
+                .agg(
+                    qtde=("qtd", "sum"),
+                    valor=("valor_unit", "max")
+                )
+            )
+            agg["dia"] = agg["dia"].dt.date
+            return agg
+
+        def gerar_series_rodizio(df):
+            rod = df[df["nome_prod"].str.contains("RODIZIO", case=False, na=False)].copy()
+            if rod.empty:
+                return pd.DataFrame(columns=["dia", "qtde_total", "is_promo_day"])
+
+            rod["dia"] = pd.to_datetime(rod["dia"]).dt.date
+
+            serie = (
+                rod.groupby("dia", as_index=False)["qtd"]
+                .sum()
+                .rename(columns={"qtd": "qtde_total"})
             )
 
-        st.divider()
-        st.subheader("Combos detectados")
+            dias_promo = (
+                rod[rod["nome_prod"].isin(nomes_rodizio_promo)]["dia"]
+                .dropna()
+                .unique()
+            )
+            serie["is_promo_day"] = serie["dia"].isin(dias_promo)
+            return serie
 
-        if df_combos.empty:
-            st.info("Nenhum combo detectado no período selecionado.")
-        else:
-            resumo_combos = (
+        def gerar_resumo_combos(df_combos):
+            if df_combos.empty:
+                return pd.DataFrame(columns=["tipo_combo", "qtd_total", "pedidos"])
+            resumo = (
                 df_combos.groupby("tipo_combo", as_index=False)
                 .agg(
                     qtd_total=("qtd_combo", "sum"),
                     pedidos=("cod_ped", "nunique")
                 )
+            )
+            return resumo
+
+        def gerar_resumo_promos_pizza(df):
+            prom = df[df["eh_promocao"]].copy()
+            if prom.empty:
+                return pd.DataFrame(
+                    columns=[
+                        "nome_prod",
+                        "qtd_total",
+                        "receita_promo",
+                        "preço_medio_promo",
+                        "desconto_medio_pct"
+                    ]
+                )
+            resumo = (
+                prom.groupby("nome_prod", as_index=False)
+                .agg(
+                    qtd_total=("qtd", "sum"),
+                    receita_promo=("valor_tot", "sum"),
+                    preço_medio_promo=("preco_promocional", "mean"),
+                    desconto_medio_pct=("desconto_pct", lambda x: x.mean() * 100)
+                )
+                .sort_values("receita_promo", ascending=False)
                 .reset_index(drop=True)
             )
+            return resumo
+
+        itens_ads = marcar_itens_promocionais(itens_ads)
+        df_combos = identificar_combos(itens_ads, combo_config)
+        tabela_promocoes = gerar_tabela_promocoes(itens_ads)
+        tabela_rodizio = gerar_tabela_rodizio(itens_ads)
+        serie_rodizio = gerar_series_rodizio(itens_ads)
+        resumo_combos = gerar_resumo_combos(df_combos)
+        resumo_promos_pizza = gerar_resumo_promos_pizza(itens_ads)
+
+        # ----- RODÍZIO -----
+        st.subheader("Rodízio")
+
+        if serie_rodizio.empty:
+            st.info("Nenhum lançamento de rodízio encontrado no período selecionado.")
+        else:
+            fig_rod = go.Figure()
+            fig_rod.add_trace(
+                go.Scatter(
+                    x=serie_rodizio["dia"],
+                    y=serie_rodizio["qtde_total"],
+                    mode="lines+markers",
+                    name="Rodízio - total de clientes"
+                )
+            )
+            serie_promo = serie_rodizio[serie_rodizio["is_promo_day"]]
+            if not serie_promo.empty:
+                fig_rod.add_trace(
+                    go.Scatter(
+                        x=serie_promo["dia"],
+                        y=serie_promo["qtde_total"],
+                        mode="markers",
+                        name="Dia de promoção",
+                        marker=dict(size=10, symbol="circle-open")
+                    )
+                )
+
+            fig_rod = estilizar_fig(fig_rod)
+            st.plotly_chart(fig_rod, use_container_width=True, key="rodizio_evolucao")
+
+            st.markdown("**Detalhe por tipo de rodízio (por dia):**")
             st.dataframe(
-                nomes_legiveis(resumo_combos),
+                nomes_legiveis(tabela_rodizio.reset_index(drop=True)),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        st.divider()
+
+        # ----- COMBOS -----
+        st.subheader("Combos")
+
+        if resumo_combos.empty:
+            st.info("Nenhum combo detectado no período selecionado.")
+        else:
+            fig_combos = px.bar(
+                resumo_combos,
+                x="tipo_combo",
+                y="qtd_total",
+                labels={"tipo_combo": "Tipo de combo", "qtd_total": "Quantidade vendida"}
+            )
+            fig_combos = estilizar_fig(fig_combos)
+            st.plotly_chart(fig_combos, use_container_width=True, key="combos_barras")
+
+            st.dataframe(
+                nomes_legiveis(resumo_combos.reset_index(drop=True)),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        st.divider()
+
+        # ----- PROMOÇÕES DE PIZZAS -----
+        st.subheader("Promoções de pizzas")
+
+        if resumo_promos_pizza.empty:
+            st.info("Nenhuma promoção de pizza detectada no período selecionado.")
+        else:
+            fig_promos = px.bar(
+                resumo_promos_pizza,
+                x="nome_prod",
+                y="receita_promo",
+                labels={"nome_prod": "Produto", "receita_promo": "Receita em promoção (R$)"}
+            )
+            fig_promos = estilizar_fig(fig_promos)
+            st.plotly_chart(fig_promos, use_container_width=True, key="promo_barras_pizza")
+
+            st.markdown("**Ranking de promoções por faturamento:**")
+            st.dataframe(
+                nomes_legiveis(resumo_promos_pizza.reset_index(drop=True)),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        st.divider()
+        st.subheader("Tabela de períodos promocionais (por produto)")
+
+        if tabela_promocoes.empty:
+            st.info("Nenhum período promocional detectado no período selecionado.")
+        else:
+            st.dataframe(
+                nomes_legiveis(tabela_promocoes.reset_index(drop=True)),
                 use_container_width=True,
                 hide_index=True
             )
