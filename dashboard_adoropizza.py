@@ -1097,15 +1097,34 @@ with tab5:
                 )
             )
 
-        fig_rod = estilizar_fig(fig_rod)
+            fig_rod = estilizar_fig(fig_rod)
         st.plotly_chart(fig_rod, use_container_width=True, key="rodizio_evolucao")
 
-        st.markdown("**Detalhe por tipo de rodízio (por dia):**")
-        st.dataframe(
-            nomes_legiveis(tabela_rodizio.reset_index(drop=True)),
-            use_container_width=True,
-            hide_index=True
-        )
+        serie_wd = serie_plot[serie_plot["dia_semana"].isin(["Quarta", "Quinta", "Sexta"])].copy()
+        if not serie_wd.empty:
+            serie_wd["tipo"] = np.where(serie_wd["is_promo_day"], "Promoção", "Normal")
+            resumo_rodizio = (
+                serie_wd.groupby(["dia_semana", "tipo"], as_index=False)["qtde_total"]
+                .mean()
+                .rename(columns={"qtde_total": "media_qtde"})
+            )
+
+            fig_comp = px.bar(
+                resumo_rodizio,
+                x="dia_semana",
+                y="media_qtde",
+                color="tipo",
+                barmode="group",
+                labels={
+                    "dia_semana": "Dia da semana",
+                    "media_qtde": "Média de rodízios por dia",
+                    "tipo": "Tipo de dia"
+                }
+            )
+            fig_comp = estilizar_fig(fig_comp)
+            st.plotly_chart(fig_comp, use_container_width=True, key="rodizio_media_normal_vs_promo")
+        else:
+            st.info("Não há dados suficientes de rodízio em quarta, quinta e sexta para comparar dias normais e promocionais.")
 
 
         st.divider()
