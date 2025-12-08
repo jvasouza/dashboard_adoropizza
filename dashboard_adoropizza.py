@@ -727,12 +727,30 @@ with tab5:
             "Valor Prod": "valor_prod"
         })
 
+        def padronizar_nome_pizza(nome):
+            if not isinstance(nome, str):
+                return nome
+
+            nome = nome.strip()
+
+            if nome.startswith("PIZZA "):
+                nome = nome.replace("PIZZA ", "", 1)
+
+            nome = nome.replace(" Pequena", " P")
+            nome = nome.replace(" Média", " M")
+            nome = nome.replace(" Grande", " G")
+
+            return nome.strip()
+
+
         itens_ads["data_item"] = pd.to_datetime(itens_ads["data_item"], errors="coerce")
         itens_ads["dia"] = itens_ads["data_item"].dt.date
         itens_ads["qtd"] = pd.to_numeric(itens_ads["qtd"], errors="coerce").fillna(0.0)
         itens_ads["valor_tot"] = pd.to_numeric(itens_ads["valor_tot"], errors="coerce").fillna(0.0)
         itens_ads["valor_prod"] = pd.to_numeric(itens_ads["valor_prod"], errors="coerce")
         itens_ads = itens_ads.dropna(subset=["dia"]).copy()
+        itens_ads["nome_prod"] = itens_ads["nome_prod"].apply(padronizar_nome_pizza)
+
 
         if data_ini is not None and data_fim is not None:
             mask_itens_periodo = (itens_ads["dia"] >= data_ini) & (itens_ads["dia"] <= data_fim)
@@ -741,17 +759,16 @@ with tab5:
         def marcar_itens_promocionais(df, limiar_desconto=0.8):
             df = df.copy()
 
-            qtd_inteira = df["qtd"].notna() and (df["qtd"] % 1 == 0)
+            df["nome_prod"] = df["nome_prod"].apply(padronizar_nome_pizza)
+
+            qtd_inteira = df["qtd"].notna() & (df["qtd"] % 1 == 0)
             multi_qtd = qtd_inteira & (df["qtd"] > 1)
 
-            preco_unit = pd.to_numeric(df["Valor Un. Item"], errors="coerce")
-            preco_unit.loc[multi_qtd] = (
-                df.loc[multi_qtd, "valor_tot"] / df.loc[multi_qtd, "qtd"]
-            )
-
+            preco_unit = (df["valor_tot"] / df["qtd"]).where(multi_qtd, df["valor_tot"])
             df["preco_unit_real"] = preco_unit
 
             mask_base = df["valor_prod"].notna() & qtd_inteira
+
             df["desconto_pct"] = 0.0
             df.loc[mask_base, "desconto_pct"] = (
                 1 - df.loc[mask_base, "preco_unit_real"] / df.loc[mask_base, "valor_prod"]
@@ -766,27 +783,31 @@ with tab5:
 
             return df
 
+
         combo_config = {
             "pizzas_doce_p": [
-                "PIZZA BRIGADEIRO Pequena",
-                "PIZZA TROPICAL Pequena",
-                "PIZZA BRIGADEIRO BRANCO Pequena",
-                "PIZZA PRESTIGIO Pequena",
-                "PIZZA BANANA Pequena",
-                "PIZZA PAÇOCA Pequena"
+                "BRIGADEIRO P",
+                "TROPICAL P",
+                "BRIGADEIRO BRANCO P",
+                "PRESTIGIO P",
+                "BANANA P",
+                "PAÇOCA P"
             ],
             "refris_lata": [
                 "COCA COLA LATA",
                 "COCA COLA ZERO LATA",
                 "FANTA LARANJA LATA",
                 "FANTA UVA LATA"
+                "SCHWEPPES CITRUS LATA"
+                "SPRITE LATA"
+                "GUARANÁ ANTARTICA LATA"
             ],
             "refris_2l": [
                 "COCA COLA 2L",
                 "GUARANÁ ANTARTICA 2L",
-                "GUARANÁ ANTARCTICA 2L"
             ]
         }
+
 
         def identificar_combos(df, combo_config):
             df_combo = df[df["Tipo de Item"] == "Item de combo"].copy()
@@ -895,6 +916,7 @@ with tab5:
                 add_linha(run_start, prev)
 
             return pd.DataFrame(linhas)
+        
 
         itens_ads = marcar_itens_promocionais(itens_ads)
         df_combos = identificar_combos(itens_ads, combo_config)
