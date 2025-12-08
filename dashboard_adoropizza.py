@@ -710,40 +710,11 @@ with tab4:
                 )
 
 with tab5:
-    df_ads = carregar_primeira_aba_xlsx(arq_ads_manager, None)
     itens_ads = carregar_primeira_aba_xlsx(arq_itens, None)
-    df_contas_ads = carregar_primeira_aba_xlsx(arq_contas, None)
 
-    if not carregou(df_ads):
-        st.info("Carregue o relatório do Facebook Ads (relatorio-04-12-25.xlsx na pasta data) para visualizar a aba Promoções.")
-    elif not carregou(itens_ads) or not carregou(df_contas_ads):
-        st.info("Carregue as planilhas de Itens Vendidos e Contas a Receber para visualizar a aba Promoções.")
+    if not carregou(itens_ads):
+        st.info("Carregue a planilha de Itens Vendidos para visualizar a aba Promoções.")
     else:
-        df_ads = df_ads.copy()
-        df_ads.columns = df_ads.columns.str.strip()
-        df_ads = df_ads.rename(columns={
-            "Nome do conjunto de anúncios": "adset",
-            "Dia": "dia",
-            "Valor usado (BRL)": "gasto",
-            "Cliques no link": "cliques",
-            "Visualizações da página de destino": "lp_views",
-            "Alcance": "alcance",
-            "Impressões": "impressoes",
-            "CTR (taxa de cliques no link)": "ctr"
-        })
-        df_ads["dia"] = pd.to_datetime(df_ads["dia"], errors="coerce").dt.date
-        df_ads["gasto"] = pd.to_numeric(df_ads["gasto"], errors="coerce").fillna(0.0)
-        df_ads["cliques"] = pd.to_numeric(df_ads["cliques"], errors="coerce").fillna(0.0)
-        df_ads["lp_views"] = pd.to_numeric(df_ads["lp_views"], errors="coerce").fillna(0.0)
-        df_ads["alcance"] = pd.to_numeric(df_ads["alcance"], errors="coerce").fillna(0.0)
-        df_ads["impressoes"] = pd.to_numeric(df_ads["impressoes"], errors="coerce").fillna(0.0)
-        df_ads["ctr"] = pd.to_numeric(df_ads["ctr"], errors="coerce").fillna(0.0)
-        df_ads = df_ads.dropna(subset=["dia", "adset"]).copy()
-
-        if data_ini is not None and data_fim is not None:
-            mask_ads_periodo = (df_ads["dia"] >= data_ini) & (df_ads["dia"] <= data_fim)
-            df_ads = df_ads.loc[mask_ads_periodo].copy()
-
         itens_ads = itens_ads.copy()
         itens_ads.columns = itens_ads.columns.str.strip()
         itens_ads = itens_ads.rename(columns={
@@ -755,6 +726,7 @@ with tab5:
             "Cod. Ped.": "cod_ped",
             "Valor Prod": "valor_prod"
         })
+
         itens_ads["data_item"] = pd.to_datetime(itens_ads["data_item"], errors="coerce")
         itens_ads["dia"] = itens_ads["data_item"].dt.date
         itens_ads["qtd"] = pd.to_numeric(itens_ads["qtd"], errors="coerce").fillna(0.0)
@@ -766,136 +738,195 @@ with tab5:
             mask_itens_periodo = (itens_ads["dia"] >= data_ini) & (itens_ads["dia"] <= data_fim)
             itens_ads = itens_ads.loc[mask_itens_periodo].copy()
 
-        itens_ads["produto_chave"] = itens_ads["nome_prod"].apply(sem_acentos_upper)
-        df_ads["produto_chave"] = df_ads["adset"].apply(sem_acentos_upper)
+        def marcar_itens_promocionais(df, limiar_desconto=0.8):
+            df = df.copy()
 
-        precos_normais = (
-            itens_ads.dropna(subset=["valor_prod"])
-            .groupby("produto_chave", as_index=False)["valor_prod"]
-            .median()
-            .rename(columns={"valor_prod": "preco_normal"})
-        )
-        itens_ads = itens_ads.merge(precos_normais, on="produto_chave", how="left")
-        itens_ads["is_promo_price"] = (
-            itens_ads["valor_prod"].notna()
-            & itens_ads["preco_normal"].notna()
-            & (itens_ads["valor_prod"] < itens_ads["preco_normal"] * 0.99)
-        )
+            qtd_inteira = df["qtd"].notna() and (df["qtd"] % 1 == 0)
+            multi_qtd = qtd_inteira & (df["qtd"] > 1)
 
-        vendas_prod = (
-            itens_ads.groupby(["dia", "produto_chave"], as_index=False)
-            .agg(
-                qtd_vendida=("qtd", "sum"),
-                receita=("valor_tot", "sum"),
-                promo_price=("is_promo_price", "max")
+            preco_unit = pd.to_numeric(df["Valor Un. Item"], errors="coerce")
+            preco_unit.loc[multi_qtd] = (
+                df.loc[multi_qtd, "valor_tot"] / df.loc[multi_qtd, "qtd"]
             )
-        )
 
-        df_ads_merged = df_ads.merge(vendas_prod, on=["dia", "produto_chave"], how="left")
+            df["preco_unit_real"] = preco_unit
 
-        df_contas_ads = df_contas_ads.copy()
-        df_contas_ads.columns = df_contas_ads.columns.str.strip()
-        df_contas_ads = df_contas_ads.rename(columns={
-            "Cód. Pedido": "cod_pedido",
-            "Valor Líq.": "valor_liq",
-            "Crédito": "data"
-        })
-        df_contas_ads["data"] = pd.to_datetime(df_contas_ads["data"], errors="coerce")
-        df_contas_ads["valor_liq"] = pd.to_numeric(df_contas_ads["valor_liq"], errors="coerce")
-        df_contas_ads = df_contas_ads.dropna(subset=["data", "valor_liq"]).copy()
+            mask_base = df["valor_prod"].notna() & qtd_inteira
+            df["desconto_pct"] = 0.0
+            df.loc[mask_base, "desconto_pct"] = (
+                1 - df.loc[mask_base, "preco_unit_real"] / df.loc[mask_base, "valor_prod"]
+            )
 
-        if data_ini is not None and data_fim is not None:
-            mask_receita_ads = (df_contas_ads["data"] >= pd.to_datetime(data_ini)) & (df_contas_ads["data"] <= pd.to_datetime(data_fim))
-            df_contas_ads = df_contas_ads.loc[mask_receita_ads].copy()
+            df["eh_promocao"] = (
+                mask_base
+                & (df["preco_unit_real"] < df["valor_prod"] * limiar_desconto)
+            )
 
-        receita_total_periodo = float(df_contas_ads["valor_liq"].sum()) if not df_contas_ads.empty else 0.0
+            df["preco_promocional"] = df["preco_unit_real"].where(df["eh_promocao"])
 
-        df_sponsored = df_ads_merged[df_ads_merged["gasto"] > 0].copy()
-        df_sponsored["receita"] = df_sponsored["receita"].fillna(0.0)
+            return df
 
-        gasto_total = float(df_sponsored["gasto"].sum()) if not df_sponsored.empty else 0.0
-        receita_promo_sponsored = float(df_sponsored["receita"].sum()) if not df_sponsored.empty else 0.0
-        pct_fat_sponsored = (receita_promo_sponsored / receita_total_periodo * 100.0) if receita_total_periodo else 0.0
+        combo_config = {
+            "pizzas_doce_p": [
+                "PIZZA BRIGADEIRO Pequena",
+                "PIZZA TROPICAL Pequena",
+                "PIZZA BRIGADEIRO BRANCO Pequena",
+                "PIZZA PRESTIGIO Pequena",
+                "PIZZA BANANA Pequena",
+                "PIZZA PAÇOCA Pequena"
+            ],
+            "refris_lata": [
+                "COCA COLA LATA",
+                "COCA COLA ZERO LATA",
+                "FANTA LARANJA LATA",
+                "FANTA UVA LATA"
+            ],
+            "refris_2l": [
+                "COCA COLA 2L",
+                "GUARANÁ ANTARTICA 2L",
+                "GUARANÁ ANTARCTICA 2L"
+            ]
+        }
 
-        idx_ads = pd.MultiIndex.from_frame(
-            df_ads.loc[df_ads["gasto"] > 0, ["dia", "produto_chave"]].drop_duplicates()
-        )
-        mask_sponsored_keys = vendas_prod.set_index(["dia", "produto_chave"]).index.isin(idx_ads)
-        promo_organica = vendas_prod[(vendas_prod["promo_price"]) & (~mask_sponsored_keys)].copy()
-        receita_promo_organica = float(promo_organica["receita"].sum()) if not promo_organica.empty else 0.0
-        pct_fat_organica = (receita_promo_organica / receita_total_periodo * 100.0) if receita_total_periodo else 0.0
+        def identificar_combos(df, combo_config):
+            df_combo = df[df["Tipo de Item"] == "Item de combo"].copy()
+            grupos = []
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Gasto total em anúncios (R$)", br_money(gasto_total))
-        c2.metric("Receita ligada a anúncios (R$)", br_money(receita_promo_sponsored))
-        c3.metric("% fat. promo patrocinada", f"{pct_fat_sponsored:.1f}%")
-        c4.metric("% fat. promo orgânica", f"{pct_fat_organica:.1f}%")
+            for cod_ped, g in df_combo.groupby("cod_ped"):
+                nomes = g["nome_prod"]
+                cats = g["cat_prod"]
 
-        st.divider()
-        st.subheader("Resumo por produto anunciado (promoções patrocinadas)")
+                count_pizza_g = ((cats == "PIZZAS") & nomes.str.contains("Grande", na=False)).sum()
+                count_pizza_p = ((cats == "PIZZAS") & nomes.str.contains("Pequena", na=False)).sum()
+                count_pizza_doce_p = nomes.isin(combo_config.get("pizzas_doce_p", [])).sum()
+                count_refri_lata = nomes.isin(combo_config.get("refris_lata", [])).sum()
+                count_refri_2l = nomes.isin(combo_config.get("refris_2l", [])).sum()
 
-        if df_sponsored.empty:
-            st.info("Nenhum gasto em anúncios no período selecionado.")
-        else:
-            resumo_prod = (
-                df_sponsored.groupby("produto_chave", as_index=False)
-                .agg(
-                    gasto_total=("gasto", "sum"),
-                    receita_promo=("receita", "sum"),
-                    dias_ativos=("dia", "nunique"),
-                    cliques=("cliques", "sum"),
-                    lp_views=("lp_views", "sum")
+                combos = []
+
+                n_refri2l = min(count_pizza_g, count_refri_2l)
+                if n_refri2l > 0:
+                    combos.append(("combo_refri_2l", n_refri2l))
+
+                n_pizza_doce = min(count_pizza_g, count_pizza_doce_p)
+                if n_pizza_doce > 0:
+                    combos.append(("combo_pizza_doce", n_pizza_doce))
+
+                n_individual = min(count_pizza_p, count_refri_lata)
+                if n_individual > 0:
+                    combos.append(("combo_individual", n_individual))
+
+                for tipo, qtd_combo in combos:
+                    grupos.append(
+                        {
+                            "cod_ped": cod_ped,
+                            "tipo_combo": tipo,
+                            "qtd_combo": int(qtd_combo)
+                        }
+                    )
+
+            if not grupos:
+                return pd.DataFrame(columns=["cod_ped", "tipo_combo", "qtd_combo"])
+
+            return pd.DataFrame(grupos)
+
+        def gerar_tabela_promocoes(df):
+            prom = df[df["eh_promocao"]].copy()
+            if prom.empty:
+                return pd.DataFrame(
+                    columns=[
+                        "nome_prod",
+                        "data_inicio",
+                        "data_fim",
+                        "Duracao",
+                        "preço promoção",
+                        "desconto_pct"
+                    ]
                 )
-            )
-            resumo_prod["roi"] = np.where(
-                resumo_prod["gasto_total"] > 0,
-                resumo_prod["receita_promo"] / resumo_prod["gasto_total"],
-                np.nan
-            )
-            resumo_prod = resumo_prod.sort_values("receita_promo", ascending=False).reset_index(drop=True)
 
-            fig_promos = px.bar(
-                resumo_prod,
-                x="produto_chave",
-                y="receita_promo",
-                labels={"produto_chave": "Produto", "receita_promo": "Receita ligada ao anúncio (R$)"}
-            )
-            fig_promos = estilizar_fig(fig_promos)
-            st.plotly_chart(fig_promos, use_container_width=True, key="promo_barras_produto")
+            prom["dia"] = pd.to_datetime(prom["dia"])
+            linhas = []
 
-            df_exibe = resumo_prod.rename(columns={
-                "produto_chave": "produto",
-                "gasto_total": "gasto",
-                "receita_promo": "receita",
-                "dias_ativos": "dias",
-                "cliques": "cliques",
-                "lp_views": "lp_views",
-                "roi": "roi"
-            })
+            for nome, g in prom.groupby("nome_prod"):
+                datas = sorted(g["dia"].dt.date.unique())
+                if not datas:
+                    continue
+
+                run_start = datas[0]
+                prev = datas[0]
+
+                def add_linha(run_start_local, prev_local):
+                    subset = g[g["dia"].dt.date.between(run_start_local, prev_local)]
+
+                    preco_vals = subset["preco_promocional"].dropna()
+                    desc_vals = subset["desconto_pct"].dropna()
+
+                    preco_prom = float(preco_vals.iloc[0]) if not preco_vals.empty else None
+                    desc_prom_pct = float(desc_vals.iloc[0]) * 100 if not desc_vals.empty else None
+
+                    if run_start_local == prev_local:
+                        duracao = run_start_local.strftime("%d-%m-%y")
+                    else:
+                        duracao = (
+                            run_start_local.strftime("%d-%m-%y")
+                            + " a "
+                            + prev_local.strftime("%d-%m-%y")
+                        )
+
+                    linhas.append(
+                        {
+                            "nome_prod": nome,
+                            "data_inicio": run_start_local,
+                            "data_fim": prev_local,
+                            "Duracao": duracao,
+                            "preço promoção": preco_prom,
+                            "desconto_pct": desc_prom_pct
+                        }
+                    )
+
+                for d in datas[1:]:
+                    if (d - prev).days == 1:
+                        prev = d
+                    else:
+                        add_linha(run_start, prev)
+                        run_start = d
+                        prev = d
+
+                add_linha(run_start, prev)
+
+            return pd.DataFrame(linhas)
+
+        itens_ads = marcar_itens_promocionais(itens_ads)
+        df_combos = identificar_combos(itens_ads, combo_config)
+        tabela_promocoes = gerar_tabela_promocoes(itens_ads)
+
+        st.subheader("Tabela de promoções detectadas")
+
+        if tabela_promocoes.empty:
+            st.info("Nenhuma promoção detectada no período selecionado.")
+        else:
             st.dataframe(
-                nomes_legiveis(df_exibe.reset_index(drop=True)),
+                nomes_legiveis(tabela_promocoes.reset_index(drop=True)),
                 use_container_width=True,
                 hide_index=True
             )
 
         st.divider()
-        st.subheader("Promoções orgânicas (sem anúncio pago, preço abaixo do normal)")
+        st.subheader("Combos detectados")
 
-        if promo_organica.empty:
-            st.info("Nenhuma promoção orgânica detectada no período selecionado.")
+        if df_combos.empty:
+            st.info("Nenhum combo detectado no período selecionado.")
         else:
-            resumo_org = (
-                promo_organica.groupby("produto_chave", as_index=False)
+            resumo_combos = (
+                df_combos.groupby("tipo_combo", as_index=False)
                 .agg(
-                    receita=("receita", "sum"),
-                    dias=("dia", "nunique")
+                    qtd_total=("qtd_combo", "sum"),
+                    pedidos=("cod_ped", "nunique")
                 )
-                .sort_values("receita", ascending=False)
                 .reset_index(drop=True)
             )
-            df_org_exibe = resumo_org.rename(columns={"produto_chave": "produto"})
             st.dataframe(
-                nomes_legiveis(df_org_exibe.reset_index(drop=True)),
+                nomes_legiveis(resumo_combos),
                 use_container_width=True,
                 hide_index=True
             )
