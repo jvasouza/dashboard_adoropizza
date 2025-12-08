@@ -4,7 +4,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import unicodedata
-from datetime import date
+from datetime import date, timedelta
 import calendar
 import locale
 import plotly.io as pio
@@ -121,6 +121,14 @@ def filtro_periodo_global(series_dt):
 
     dmin = s.min().date()
     dmax = s.max().date()
+
+    if "data_ini" not in st.session_state or "data_fim" not in st.session_state:
+        hoje = date.today()
+        fim_padrao = min(hoje, dmax)
+        ini_padrao = max(fim_padrao - timedelta(days=30), dmin)
+        st.session_state["data_ini"] = ini_padrao
+        st.session_state["data_fim"] = fim_padrao
+
     anos = sorted(s.dt.year.unique())
     ano_sel = st.sidebar.selectbox("Ano para botões", anos, index=len(anos)-1, key="ano_btns")
 
