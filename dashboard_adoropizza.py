@@ -51,7 +51,7 @@ st.set_page_config(
     layout="wide"
 )
 
-col_titulo, col_logo = st.columns([6, 1])  # ajuste a proporção se quiser
+col_titulo, col_logo = st.columns([5, 2])  # ajuste a proporção se quiser
 
 with col_titulo:
     st.title("Dashboard - Adoro Pizza")
