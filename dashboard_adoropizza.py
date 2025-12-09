@@ -70,7 +70,8 @@ st.markdown("""
 
 # Inserção invisível para carregar a imagem
 with st.sidebar:
-    st.markdown(f"<img src='logo (1920 x 1080px).png' class='sidebar-logo'>", unsafe_allow_html=True)
+    st.markdown(f"<img src='logo_sidebar.png' class='sidebar-logo'>", unsafe_allow_html=True)
+
 
 st.markdown("""
 <style>
