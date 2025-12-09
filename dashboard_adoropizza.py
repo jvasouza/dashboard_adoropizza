@@ -130,7 +130,7 @@ def filtro_periodo_global(series_dt):
         st.session_state["data_fim"] = fim_padrao
 
     anos = sorted(s.dt.year.unique())
-    ano_sel = st.sidebar.selectbox("Ano para botões", anos, index=len(anos)-1, key="ano_btns")
+    ano_sel = st.sidebar.selectbox("Ano", anos, index=len(anos)-1, key="ano_btns")
 
     nomes_pt = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
     cols = st.sidebar.columns(2)
@@ -173,7 +173,7 @@ def filtro_periodo_global(series_dt):
         dini, dfim = dmin, dmax
 
     st.session_state["data_ini"], st.session_state["data_fim"] = dini, dfim
-    st.sidebar.caption(f"Filtrando: {dini.strftime('%d/%m/%Y')} → {dfim.strftime('%d/%m/%Y')}")
+
     return dini, dfim
 
 
@@ -289,7 +289,6 @@ with tab1:
         k2.metric("Total de Pedidos", f"{n_pedidos}")
         k3.metric("Ticket Médio (R$)", br_money(ticket_medio))
         k4.metric("Faturamento Médio/Dia (R$)", br_money(fat_medio_dia))
-        st.divider()
         st.subheader("Evolução do Faturamento Diário")
         dff["dia"] = dff["data"].dt.date
         fat_dia = dff.groupby("dia", as_index=False)["valor_liq"].sum().sort_values("dia")
@@ -1080,7 +1079,6 @@ with tab5:
             resumo = resumo.sort_values("receita_media_dia", ascending=False).reset_index(drop=True)
             return resumo
 
-
         itens_ads = marcar_itens_promocionais(itens_ads)
         df_combos = identificar_combos(itens_ads, combo_config)
         tabela_promocoes = gerar_tabela_promocoes(itens_ads)
@@ -1091,233 +1089,230 @@ with tab5:
 
         st.subheader("Rodízio")
 
-    if serie_rodizio.empty:
-        st.info("Nenhum lançamento de rodízio encontrado no período selecionado.")
-    else:
-        serie_plot = serie_rodizio.copy()
-        serie_plot["dia"] = pd.to_datetime(serie_plot["dia"])
+        if serie_rodizio.empty:
+            st.info("Nenhum lançamento de rodízio encontrado no período selecionado.")
+        else:
+            serie_plot = serie_rodizio.copy()
+            serie_plot["dia"] = pd.to_datetime(serie_plot["dia"])
 
-        mapa_semana = {
-            0: "Segunda",
-            1: "Terça",
-            2: "Quarta",
-            3: "Quinta",
-            4: "Sexta",
-            5: "Sábado",
-            6: "Domingo"
-        }
-        serie_plot["dia_semana"] = serie_plot["dia"].dt.dayofweek.map(mapa_semana)
+            mapa_semana = {
+                0: "Segunda",
+                1: "Terça",
+                2: "Quarta",
+                3: "Quinta",
+                4: "Sexta",
+                5: "Sábado",
+                6: "Domingo"
+            }
+            serie_plot["dia_semana"] = serie_plot["dia"].dt.dayofweek.map(mapa_semana)
 
-        fig_rod = go.Figure()
-        fig_rod.add_trace(
-            go.Scatter(
-                x=serie_plot["dia"],
-                y=serie_plot["qtde_total"],
-                mode="lines+markers",
-                name="Rodízio - total de clientes",
-                customdata=serie_plot["dia_semana"],
-                hovertemplate="Qtde: %{y}<br>Dia: %{customdata}<extra></extra>"
-            )
-        )
-
-        serie_promo = serie_plot[serie_plot["is_promo_day"]]
-        if not serie_promo.empty:
+            fig_rod = go.Figure()
             fig_rod.add_trace(
                 go.Scatter(
-                    x=serie_promo["dia"],
-                    y=serie_promo["qtde_total"],
-                    mode="markers",
-                    name="Dia de rodízio promocional",
-                    marker=dict(size=10, symbol="circle-open"),
-                    customdata=serie_promo["dia_semana"],
-                    hovertemplate="Qtde: %{y}<br>Promo: %{customdata}<extra></extra>"
+                    x=serie_plot["dia"],
+                    y=serie_plot["qtde_total"],
+                    mode="lines+markers",
+                    name="Rodízio - total de clientes",
+                    customdata=serie_plot["dia_semana"],
+                    hovertemplate="Qtde: %{y}<br>Dia: %{customdata}<extra></extra>"
                 )
             )
 
+            serie_promo = serie_plot[serie_plot["is_promo_day"]]
+            if not serie_promo.empty:
+                fig_rod.add_trace(
+                    go.Scatter(
+                        x=serie_promo["dia"],
+                        y=serie_promo["qtde_total"],
+                        mode="markers",
+                        name="Dia de rodízio promocional",
+                        marker=dict(size=10, symbol="circle-open"),
+                        customdata=serie_promo["dia_semana"],
+                        hovertemplate="Qtde: %{y}<br>Promo: %{customdata}<extra></extra>"
+                    )
+                )
+
             fig_rod = estilizar_fig(fig_rod)
-        st.plotly_chart(fig_rod, use_container_width=True, key="rodizio_evolucao")
+            st.plotly_chart(fig_rod, use_container_width=True, key="rodizio_evolucao")
 
-        serie_wd = serie_plot[serie_plot["dia_semana"].isin(["Quarta", "Quinta", "Sexta"])].copy()
-        if not serie_wd.empty:
-            serie_wd["tipo"] = np.where(serie_wd["is_promo_day"], "Promoção", "Normal")
-            resumo_rodizio = (
-                serie_wd.groupby(["dia_semana", "tipo"], as_index=False)["qtde_total"]
-                .mean()
-                .rename(columns={"qtde_total": "media_qtde"})
-            )
+            serie_wd = serie_plot[serie_plot["dia_semana"].isin(["Quarta", "Quinta", "Sexta"])].copy()
+            if not serie_wd.empty:
+                serie_wd["tipo"] = np.where(serie_wd["is_promo_day"], "Promoção", "Normal")
+                resumo_rodizio = (
+                    serie_wd.groupby(["dia_semana", "tipo"], as_index=False)["qtde_total"]
+                    .mean()
+                    .rename(columns={"qtde_total": "media_qtde"})
+                )
 
-            fig_comp = px.bar(
-                resumo_rodizio,
-                x="dia_semana",
-                y="media_qtde",
-                color="tipo",
-                barmode="group",
-                labels={
-                    "dia_semana": "Dia da semana",
-                    "media_qtde": "Média de rodízios por dia",
-                    "tipo": "Tipo de dia"
+                fig_comp = px.bar(
+                    resumo_rodizio,
+                    x="dia_semana",
+                    y="media_qtde",
+                    color="tipo",
+                    barmode="group",
+                    labels={
+                        "dia_semana": "Dia da semana",
+                        "media_qtde": "Média de rodízios por dia",
+                        "tipo": "Tipo de dia"
+                    }
+                )
+                fig_comp = estilizar_fig(fig_comp)
+                st.plotly_chart(fig_comp, use_container_width=True, key="rodizio_media_normal_vs_promo")
+            else:
+                st.info("Não há dados suficientes de rodízio em quarta, quinta e sexta para comparar dias normais e promocionais.")
+
+            st.divider()
+            st.subheader("Combos")
+
+            if resumo_combos.empty:
+                st.info("Nenhum combo detectado no período selecionado.")
+            else:
+                fig_combos = px.pie(
+                    resumo_combos,
+                    names="tipo_combo",
+                    values="qtd_total",
+                )
+                fig_combos = estilizar_fig(fig_combos)
+                st.plotly_chart(fig_combos, use_container_width=True, key="combos_pizza")
+
+                st.dataframe(
+                    nomes_legiveis(resumo_combos.reset_index(drop=True)),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+            st.divider()
+            st.subheader("Promoções de pizzas")
+
+            if resumo_promos_pizza.empty:
+                st.info("Nenhuma promoção de pizza detectada no período selecionado.")
+            else:
+                fig_promos = px.bar(
+                    resumo_promos_pizza,
+                    x="nome_prod",
+                    y="receita_media_dia",
+                    labels={
+                        "nome_prod": "Produto",
+                        "receita_media_dia": "Receita média por dia em promoção (R$)"
+                    }
+                )
+                fig_promos = estilizar_fig(fig_promos)
+                st.plotly_chart(fig_promos, use_container_width=True, key="promo_barras_pizza")
+
+                df_comp = resumo_promos_pizza.dropna(subset=["qtd_media_dia_normal"]).copy()
+                if not df_comp.empty:
+                    df_long = pd.melt(
+                        df_comp,
+                        id_vars=["nome_prod"],
+                        value_vars=["qtd_media_dia_normal", "qtd_media_dia"],
+                        var_name="tipo_dia",
+                        value_name="qtd_media"
+                    )
+                    df_long["tipo_dia"] = df_long["tipo_dia"].map(
+                        {
+                            "qtd_media_dia_normal": "Dia normal",
+                            "qtd_media_dia": "Dia com promoção"
+                        }
+                    )
+
+                    fig_comp_pizza = px.bar(
+                        df_long,
+                        x="nome_prod",
+                        y="qtd_media",
+                        color="tipo_dia",
+                        barmode="group",
+                        labels={
+                            "nome_prod": "Produto",
+                            "qtd_media": "Média de pizzas por dia",
+                            "tipo_dia": "Tipo de dia"
+                        }
+                    )
+                    fig_comp_pizza = estilizar_fig(fig_comp_pizza)
+                    st.plotly_chart(
+                        fig_comp_pizza,
+                        use_container_width=True,
+                        key="promo_pizza_normal_vs_promo"
+                    )
+                else:
+                    st.info("Não há vendas em dia normal suficientes para comparar com as promoções.")
+
+                df_dias = itens_ads.copy()
+                df_dias["dia"] = pd.to_datetime(df_dias["dia"], errors="coerce")
+                df_dias = df_dias[df_dias["dia"].dt.dayofweek.isin([2, 3, 4, 5, 6])].copy()
+
+                df_fat = (
+                    df_dias.groupby("dia", as_index=False)["valor_tot"]
+                    .sum()
+                    .rename(columns={"valor_tot": "faturamento"})
+                )
+
+                dias_pizza_promo = (
+                    df_dias[df_dias["eh_promocao"]]["dia"]
+                    .dropna()
+                    .unique()
+                )
+
+                mask_rod = df_dias["nome_rodizio_chave"].isin(rodizio_nomes_todos_norm)
+                rod_dias = df_dias[mask_rod].copy()
+                dias_rodizio_promo = (
+                    rod_dias[rod_dias["nome_rodizio_chave"].isin(rodizio_nomes_promo_norm)]["dia"]
+                    .dropna()
+                    .unique()
+                )
+
+                dias_com_promo = set(list(dias_pizza_promo) + list(dias_rodizio_promo))
+
+                df_fat["tipo_dia"] = np.where(df_fat["dia"].isin(dias_com_promo), "Com promoção", "Sem promoção")
+
+                mapa_semana = {
+                    0: "Segunda",
+                    1: "Terça",
+                    2: "Quarta",
+                    3: "Quinta",
+                    4: "Sexta",
+                    5: "Sábado",
+                    6: "Domingo"
                 }
-            )
-            fig_comp = estilizar_fig(fig_comp)
-            st.plotly_chart(fig_comp, use_container_width=True, key="rodizio_media_normal_vs_promo")
-        else:
-            st.info("Não há dados suficientes de rodízio em quarta, quinta e sexta para comparar dias normais e promocionais.")
+                df_fat["dow"] = df_fat["dia"].dt.dayofweek
+                df_fat["dia_semana"] = df_fat["dow"].map(mapa_semana)
 
+                df_fat = df_fat[df_fat["dow"].isin([2, 3, 4, 5, 6])].copy()
 
-        st.divider()
+                resumo_fat = (
+                    df_fat.groupby(["dia_semana", "tipo_dia"], as_index=False)["faturamento"]
+                    .mean()
+                    .rename(columns={"faturamento": "faturamento_medio"})
+                )
 
-        st.subheader("Combos")
+                ordem = ["Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+                resumo_fat["dia_semana"] = pd.Categorical(resumo_fat["dia_semana"], categories=ordem, ordered=True)
+                resumo_fat = resumo_fat.sort_values("dia_semana")
 
-        if resumo_combos.empty:
-            st.info("Nenhum combo detectado no período selecionado.")
-        else:
-            fig_combos = px.pie(
-                resumo_combos,
-                names="tipo_combo",
-                values="qtd_total",
-            )
-            fig_combos = estilizar_fig(fig_combos)
-            st.plotly_chart(fig_combos, use_container_width=True, key="combos_pizza")
+                if resumo_fat.empty:
+                    st.info("Não há dados suficientes para calcular o faturamento médio por dia da semana.")
+                else:
+                    fig_fat = px.bar(
+                        resumo_fat,
+                        x="dia_semana",
+                        y="faturamento_medio",
+                        color="tipo_dia",
+                        barmode="group",
+                        labels={
+                            "dia_semana": "Dia da semana",
+                            "faturamento_medio": "Faturamento médio por dia (R$)",
+                            "tipo_dia": "Tipo de dia"
+                        }
+                    )
+                    fig_fat = estilizar_fig(fig_fat)
+                    st.plotly_chart(
+                        fig_fat,
+                        use_container_width=True,
+                        key="fat_medio_normal_vs_promo"
+                    )
 
-            st.dataframe(
-                nomes_legiveis(resumo_combos.reset_index(drop=True)),
-                use_container_width=True,
-                hide_index=True
-            )
-
-        st.divider()
-
-        st.subheader("Promoções de pizzas")
-
-if resumo_promos_pizza.empty:
-    st.info("Nenhuma promoção de pizza detectada no período selecionado.")
-else:
-    fig_promos = px.bar(
-        resumo_promos_pizza,
-        x="nome_prod",
-        y="receita_media_dia",
-        labels={
-            "nome_prod": "Produto",
-            "receita_media_dia": "Receita média por dia em promoção (R$)"
-        }
-    )
-    fig_promos = estilizar_fig(fig_promos)
-    st.plotly_chart(fig_promos, use_container_width=True, key="promo_barras_pizza")
-
-    df_comp = resumo_promos_pizza.dropna(subset=["qtd_media_dia_normal"]).copy()
-    if not df_comp.empty:
-        df_long = pd.melt(
-            df_comp,
-            id_vars=["nome_prod"],
-            value_vars=["qtd_media_dia_normal", "qtd_media_dia"],
-            var_name="tipo_dia",
-            value_name="qtd_media"
-        )
-        df_long["tipo_dia"] = df_long["tipo_dia"].map(
-            {
-                "qtd_media_dia_normal": "Dia normal",
-                "qtd_media_dia": "Dia com promoção"
-            }
-        )
-
-        fig_comp_pizza = px.bar(
-            df_long,
-            x="nome_prod",
-            y="qtd_media",
-            color="tipo_dia",
-            barmode="group",
-            labels={
-                "nome_prod": "Produto",
-                "qtd_media": "Média de pizzas por dia",
-                "tipo_dia": "Tipo de dia"
-            }
-        )
-        fig_comp_pizza = estilizar_fig(fig_comp_pizza)
-        st.plotly_chart(
-            fig_comp_pizza,
-            use_container_width=True,
-            key="promo_pizza_normal_vs_promo"
-        )
-    else:
-        st.info("Não há vendas em dia normal suficientes para comparar com as promoções.")
-
-    df_dias = itens_ads.copy()
-    df_dias["dia"] = pd.to_datetime(df_dias["dia"], errors="coerce")
-    df_dias = df_dias[df_dias["dia"].dt.dayofweek.isin([2, 3, 4, 5, 6])].copy()
-
-    df_fat = (
-        df_dias.groupby("dia", as_index=False)["valor_tot"]
-        .sum()
-        .rename(columns={"valor_tot": "faturamento"})
-    )
-
-    dias_pizza_promo = (
-        df_dias[df_dias["eh_promocao"]]["dia"]
-        .dropna()
-        .unique()
-    )
-
-    mask_rod = df_dias["nome_rodizio_chave"].isin(rodizio_nomes_todos_norm)
-    rod_dias = df_dias[mask_rod].copy()
-    dias_rodizio_promo = (
-        rod_dias[rod_dias["nome_rodizio_chave"].isin(rodizio_nomes_promo_norm)]["dia"]
-        .dropna()
-        .unique()
-    )
-
-    dias_com_promo = set(list(dias_pizza_promo) + list(dias_rodizio_promo))
-
-    df_fat["tipo_dia"] = np.where(df_fat["dia"].isin(dias_com_promo), "Com promoção", "Sem promoção")
-
-    mapa_semana = {
-        0: "Segunda",
-        1: "Terça",
-        2: "Quarta",
-        3: "Quinta",
-        4: "Sexta",
-        5: "Sábado",
-        6: "Domingo"
-    }
-    df_fat["dow"] = df_fat["dia"].dt.dayofweek
-    df_fat["dia_semana"] = df_fat["dow"].map(mapa_semana)
-
-    df_fat = df_fat[df_fat["dow"].isin([2, 3, 4, 5, 6])].copy()
-
-    resumo_fat = (
-        df_fat.groupby(["dia_semana", "tipo_dia"], as_index=False)["faturamento"]
-        .mean()
-        .rename(columns={"faturamento": "faturamento_medio"})
-    )
-
-    ordem = ["Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
-    resumo_fat["dia_semana"] = pd.Categorical(resumo_fat["dia_semana"], categories=ordem, ordered=True)
-    resumo_fat = resumo_fat.sort_values("dia_semana")
-
-    if resumo_fat.empty:
-        st.info("Não há dados suficientes para calcular o faturamento médio por dia da semana.")
-    else:
-        fig_fat = px.bar(
-            resumo_fat,
-            x="dia_semana",
-            y="faturamento_medio",
-            color="tipo_dia",
-            barmode="group",
-            labels={
-                "dia_semana": "Dia da semana",
-                "faturamento_medio": "Faturamento médio por dia (R$)",
-                "tipo_dia": "Tipo de dia"
-            }
-        )
-        fig_fat = estilizar_fig(fig_fat)
-        st.plotly_chart(
-            fig_fat,
-            use_container_width=True,
-            key="fat_medio_normal_vs_promo"
-        )
-
-    st.markdown("**Ranking de promoções (ponderado por dia em promoção):**")
-    st.dataframe(
-        nomes_legiveis(resumo_promos_pizza.reset_index(drop=True)),
-        use_container_width=True,
-        hide_index=True
-    )
+                st.markdown("**Ranking de promoções (ponderado por dia em promoção):**")
+                st.dataframe(
+                    nomes_legiveis(resumo_promos_pizza.reset_index(drop=True)),
+                    use_container_width=True,
+                    hide_index=True
+                )
