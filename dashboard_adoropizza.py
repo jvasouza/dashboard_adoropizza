@@ -64,7 +64,6 @@ st.markdown("""
     position: absolute;
     top: 15px;          /* distância do topo */
     left: 15px;         /* alinhamento lateral */
-    width: 90px;        /* tamanho da logo  → pode ajustar */
 }
 </style>
 """, unsafe_allow_html=True)
