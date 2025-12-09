@@ -57,7 +57,7 @@ with col_titulo:
     st.title("Dashboard - Adoro Pizza")
 
 with col_logo:
-    st.image("logo sidebar.png", width=500)
+    st.image("logo sidebar.png", width=1920)
 
 
 
