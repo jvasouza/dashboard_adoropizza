@@ -629,94 +629,129 @@ with tab4:
         df_meta["valor_liq"] = pd.to_numeric(df_meta["valor_liq"], errors="coerce")
         df_meta = df_meta.dropna(subset=["data", "valor_liq", "cod_pedido"]).copy()
 
-        df_meta["semana"] = df_meta["data"] + pd.to_timedelta((6 - df_meta["data"].dt.weekday) % 7, unit="D")
-        df_meta["semana"] = df_meta["semana"].dt.normalize()
-
-        resumo_sem = (
-            df_meta.groupby("semana", as_index=False)
-            .agg(
-                receita=("valor_liq", "sum"),
-                pedidos=("cod_pedido", "nunique")
-            )
-            .sort_values("semana")
-        )
-
-        if resumo_sem.empty or len(resumo_sem) < 1:
-            st.info("Dados insuficientes para análise semanal.")
+        if df_meta.empty:
+            st.info("Não há dados válidos para análise de metas.")
         else:
-            hoje = pd.to_datetime(date.today())
-            fim_semana_atual = hoje + pd.to_timedelta((6 - hoje.weekday()) % 7, unit="D")
-            fim_semana_atual = fim_semana_atual.normalize()
+            df_meta["semana"] = df_meta["data"] + pd.to_timedelta((6 - df_meta["data"].dt.weekday) % 7, unit="D")
+            df_meta["semana"] = df_meta["semana"].dt.normalize()
 
-            resumo_passado = resumo_sem[resumo_sem["semana"] < fim_semana_atual].copy()
+            resumo_sem = (
+                df_meta.groupby("semana", as_index=False)
+                .agg(
+                    receita=("valor_liq", "sum"),
+                    pedidos=("cod_pedido", "nunique")
+                )
+                .sort_values("semana")
+            )
 
-            if resumo_passado.empty:
-                st.info("Ainda não há semanas fechadas para análise.")
+            if resumo_sem.empty or len(resumo_sem) < 1:
+                st.info("Dados insuficientes para análise semanal.")
             else:
-                semanas_ordenadas = resumo_passado["semana"].sort_values().unique()
-                semana_passada = semanas_ordenadas[-1]
-                linha_passada = resumo_passado[resumo_passado["semana"] == semana_passada]
+                max_data = df_meta["data"].max().normalize()
+                fim_semana_dados = max_data + pd.to_timedelta((6 - max_data.weekday()) % 7, unit="D")
+                fim_semana_dados = fim_semana_dados.normalize()
 
-                receita_passada = float(linha_passada["receita"].iloc[0])
-                pedidos_passada = int(linha_passada["pedidos"].iloc[0])
+                resumo_completo = resumo_sem[resumo_sem["semana"] < fim_semana_dados].copy()
 
-                diff_abs = None
-                diff_pct = None
-
-                if len(semanas_ordenadas) >= 2:
-                    semana_retrasada = semanas_ordenadas[-2]
-                    linha_retrasada = resumo_passado[resumo_passado["semana"] == semana_retrasada]
-                    receita_retrasada = float(linha_retrasada["receita"].iloc[0])
-
-                    diff_abs = receita_passada - receita_retrasada
-                    if receita_retrasada != 0:
-                        diff_pct = diff_abs / receita_retrasada * 100
-                    else:
-                        diff_pct = 0.0
-
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Semana passada (R$)", br_money(receita_passada))
-                c2.metric("Pedidos semana passada", f"{pedidos_passada}")
-
-                if diff_abs is not None:
-                    c3.metric(
-                        "Variação vs semana retrasada",
-                        br_money(diff_abs),
-                        f"{diff_pct:,.1f}%"
-                    )
+                if resumo_completo.empty:
+                    st.info("Ainda não há nenhuma semana completa fechada para análise de metas.")
                 else:
-                    c3.metric("Variação vs semana retrasada", "-", "-")
+                    semanas_ordenadas = resumo_completo["semana"].sort_values().unique()
+                    semana_passada = semanas_ordenadas[-1]
+                    linha_passada = resumo_completo[resumo_completo["semana"] == semana_passada]
 
-                if diff_abs is not None:
-                    if diff_abs > 0:
-                        st.caption(f"A semana passada faturou {br_money(diff_abs)} a mais (+{diff_pct:,.1f}%) que a semana retrasada.")
-                    elif diff_abs < 0:
-                        st.caption(f"A semana passada faturou {br_money(-diff_abs)} a menos ({diff_pct:,.1f}%) que a semana retrasada.")
+                    receita_passada = float(linha_passada["receita"].iloc[0])
+                    pedidos_passada = int(linha_passada["pedidos"].iloc[0])
+
+                    diff_abs = None
+                    diff_pct = None
+
+                    if len(semanas_ordenadas) >= 2:
+                        semana_retrasada = semanas_ordenadas[-2]
+                        linha_retrasada = resumo_completo[resumo_completo["semana"] == semana_retrasada]
+                        receita_retrasada = float(linha_retrasada["receita"].iloc[0])
+
+                        diff_abs = receita_passada - receita_retrasada
+                        if receita_retrasada != 0:
+                            diff_pct = diff_abs / receita_retrasada * 100
+                        else:
+                            diff_pct = 0.0
+
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Semana passada (R$)", br_money(receita_passada))
+                    c2.metric("Pedidos semana passada", f"{pedidos_passada}")
+
+                    if diff_abs is not None:
+                        c3.metric(
+                            "Variação vs semana retrasada",
+                            br_money(diff_abs),
+                            f"{diff_pct:,.1f}%"
+                        )
                     else:
-                        st.caption("Semana passada teve o mesmo faturamento da semana retrasada.")
+                        c3.metric("Variação vs semana retrasada", "-", "-")
 
-                st.divider()
+                    if diff_abs is not None:
+                        if diff_abs > 0:
+                            st.caption(f"A semana passada faturou {br_money(diff_abs)} a mais (+{diff_pct:,.1f}%) que a semana retrasada.")
+                        elif diff_abs < 0:
+                            st.caption(f"A semana passada faturou {br_money(-diff_abs)} a menos ({diff_pct:,.1f}%) que a semana retrasada.")
+                        else:
+                            st.caption("Semana passada teve o mesmo faturamento da semana retrasada.")
 
-                st.subheader("Faturamento por Semana (histórico)")
-                fig_sem = px.line(
-                    resumo_passado.tail(12),
-                    x="semana",
-                    y="receita",
-                    markers=True,
-                    labels={"semana": "Fim da Semana (domingo)", "receita": "Receita (R$)"}
-                )
-                fig_sem = estilizar_fig(fig_sem)
-                fig_sem.update_xaxes(tickformat="%d/%m/%Y")
-                st.plotly_chart(fig_sem, use_container_width=True, key="metas_linha_semana")
+                    st.divider()
 
-                st.subheader("Resumo Semanal")
-                df_sem_exibe = resumo_passado.tail(12).copy()
-                df_sem_exibe = df_sem_exibe.rename(columns={"semana": "data"})
-                st.dataframe(
-                    nomes_legiveis(df_sem_exibe.reset_index(drop=True)),
-                    use_container_width=True,
-                    hide_index=True
-                )
+                    st.subheader("Histórico recente de faturamento")
+
+                    ultimas_sem = resumo_completo.sort_values("semana").tail(4).copy()
+                    ultimas_sem["label"] = ultimas_sem["semana"].dt.strftime("%d/%m")
+
+                    df_meta["mes"] = df_meta["data"].dt.to_period("M").dt.to_timestamp("M")
+                    resumo_mes = (
+                        df_meta.groupby("mes", as_index=False)
+                        .agg(receita=("valor_liq", "sum"))
+                        .sort_values("mes")
+                    )
+                    ultimos_mes = resumo_mes.tail(4).copy()
+                    ultimos_mes["label"] = ultimos_mes["mes"].dt.strftime("%m/%Y")
+
+                    col_sem, col_mes = st.columns(2)
+
+                    with col_sem:
+                        st.markdown("**Últimas 4 semanas completas**")
+                        if len(ultimas_sem) == 0:
+                            st.info("Sem semanas completas suficientes para exibir.")
+                        else:
+                            fig_sem = px.bar(
+                                ultimas_sem,
+                                y="label",
+                                x="receita",
+                                orientation="h",
+                                labels={
+                                    "label": "Semana (fim em domingo)",
+                                    "receita": "Faturamento (R$)"
+                                }
+                            )
+                            fig_sem = estilizar_fig(fig_sem)
+                            st.plotly_chart(fig_sem, use_container_width=True, key="metas_barras_semanas")
+
+                    with col_mes:
+                        st.markdown("**Últimos 4 meses**")
+                        if len(ultimos_mes) == 0:
+                            st.info("Sem meses suficientes para exibir.")
+                        else:
+                            fig_mes = px.bar(
+                                ultimos_mes,
+                                y="label",
+                                x="receita",
+                                orientation="h",
+                                labels={
+                                    "label": "Mês",
+                                    "receita": "Faturamento (R$)"
+                                }
+                            )
+                            fig_mes = estilizar_fig(fig_mes)
+                            st.plotly_chart(fig_mes, use_container_width=True, key="metas_barras_meses")
+
 
 with tab5:
     itens_ads = carregar_primeira_aba_xlsx(arq_itens, None)
