@@ -47,30 +47,16 @@ pio.templates.default = "bene_tema"
 
 st.set_page_config(
     page_title="Dashboard Adoro Pizza",
-    page_icon="logo (1080 x 1080px).png",
+    page_icon="logo favicon.png",
     layout="wide"
 )
-st.title("Dashboard - Adoro Pizza")
 
-st.markdown("""
-<style>
-/* Container da sidebar */
-[data-testid="stSidebar"] {
-    position: relative;
-}
-
-/* Estilo da logo dentro da sidebar */
-.sidebar-logo {
-    position: absolute;
-    top: 15px;          /* distância do topo */
-    left: 15px;         /* alinhamento lateral */
-}
-</style>
-""", unsafe_allow_html=True)
-
-# Inserção invisível para carregar a imagem
+# LOGO NA SIDEBAR (canto superior esquerdo, pequena)
 with st.sidebar:
-    st.markdown(f"<img src='logo_sidebar.png' class='sidebar-logo'>", unsafe_allow_html=True)
+    st.image("logo_sidebar.png", width=80)
+    st.markdown("")  # só pra dar um respiro
+
+st.title("Dashboard - Adoro Pizza")
 
 
 st.markdown("""
