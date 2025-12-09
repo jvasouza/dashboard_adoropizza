@@ -490,13 +490,71 @@ with tab3:
         c_bebidas = c_bebidas.copy()
         c_pizzas.columns = c_pizzas.columns.str.strip()
         c_bebidas.columns = c_bebidas.columns.str.strip()
-        c_pizzas["_KEY"] = normalize_key_general(c_pizzas["produto"])
-        c_bebidas["_KEY"] = normalize_key_general(c_bebidas["produto"])
 
-        lookup_pizza = c_pizzas.set_index("_KEY")["custo"]
-        lookup_bebida = c_bebidas.set_index("_KEY")["custo"]
-        iv["custo_pizza"] = iv["nome_limpo"].map(lookup_pizza)
-        iv["custo_bebida"] = iv["nome_limpo"].map(lookup_bebida)
+        def make_key_pizza_from_consumer_nome(nome_raw):
+            s = str(nome_raw).strip()
+            if s.upper().startswith("PIZZA "):
+                s = s[6:]
+            s = re.sub(r"\bGrande\b", "G", s)
+            s = re.sub(r"\bM[eé]dia\b", "M", s)
+            s = re.sub(r"\bPequena\b", "P", s)
+            s = re.sub(r"\s{2,}", " ", s)
+            return s.strip()
+
+        def make_key_bebida_nome(nome_raw):
+            s = str(nome_raw).strip()
+            up = s.upper()
+            if up.startswith("SUCO"):
+                if "LARANJA" in up and "JARRA" in up:
+                    return "SUCO JARRA LARANJA"
+                if "LARANJA" in up and "400" in up:
+                    return "SUCO DE LARANJA 400ml"
+                if "400ML" in up:
+                    return "SUCO 400ml"
+                if "JARRA" in up:
+                    return "SUCO JARRA"
+            s = re.sub(r"\s{2,}", " ", s)
+            return s.strip()
+
+        c_pizzas["key_custo"] = c_pizzas["produto"].astype(str).apply(make_key_pizza_from_consumer_nome)
+        c_bebidas["key_custo"] = c_bebidas["produto"].astype(str).apply(make_key_bebida_nome)
+
+        lookup_pizza = c_pizzas.set_index("key_custo")["custo"]
+        lookup_bebida = c_bebidas.set_index("key_custo")["custo"]
+
+        iv["key_pizza"] = None
+        iv["key_bebida"] = None
+
+        mask_cat_pizza = iv["cat_prod"].astype(str).str.upper().eq("PIZZAS")
+        mask_cat_sucos = iv["cat_prod"].astype(str).str.upper().eq("SUCOS")
+
+        iv.loc[mask_cat_pizza, "key_pizza"] = iv.loc[mask_cat_pizza, "nome_prod"].apply(make_key_pizza_from_consumer_nome)
+
+        def make_key_suco_from_consumer_nome(nome_raw):
+            s = str(nome_raw).strip()
+            up = s.upper()
+            if "LARANJA" in up and "JARRA" in up:
+                return "SUCO JARRA LARANJA"
+            if "LARANJA" in up and "400" in up:
+                return "SUCO DE LARANJA 400ml"
+            if up.endswith("400ML"):
+                return "SUCO 400ml"
+            if "JARRA" in up:
+                return "SUCO JARRA"
+            return s
+
+        iv.loc[mask_cat_sucos, "key_bebida"] = iv.loc[mask_cat_sucos, "nome_prod"].apply(make_key_suco_from_consumer_nome)
+
+        mask_outros = ~(mask_cat_pizza | mask_cat_sucos)
+        iv.loc[mask_outros, "key_bebida"] = (
+            iv.loc[mask_outros, "nome_prod"]
+            .astype(str)
+            .str.strip()
+            .replace(r"\s{2,}", " ", regex=True)
+        )
+
+        iv["custo_pizza"] = iv["key_pizza"].map(lookup_pizza)
+        iv["custo_bebida"] = iv["key_bebida"].map(lookup_bebida)
         iv["custo_unit"] = iv["custo_pizza"].combine_first(iv["custo_bebida"])
 
         mask_complemento = iv["cat_norm"].astype(str).str.strip().str.upper().eq("COMPLEMENTO")
