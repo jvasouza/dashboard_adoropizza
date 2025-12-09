@@ -51,10 +51,13 @@ st.set_page_config(
     layout="wide"
 )
 
-# LOGO NA SIDEBAR (canto superior esquerdo, pequena)
-with st.sidebar:
-    st.image("logo sidebar.png", width=80)
-    st.markdown("")  # só pra dar um respiro
+col_titulo, col_logo = st.columns([6, 1])  # ajuste a proporção se quiser
+
+with col_titulo:
+    st.title("Dashboard - Adoro Pizza")
+
+with col_logo:
+    st.image("logo sidebar.png", width=120)
 
 st.title("Dashboard - Adoro Pizza")
 
