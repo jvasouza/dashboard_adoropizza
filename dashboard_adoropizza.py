@@ -45,8 +45,16 @@ pio.templates["bene_tema"] = dict(
 )
 pio.templates.default = "bene_tema"
 
-st.set_page_config(page_title="Dashboard - Adoro Pizza", layout="wide")
+st.set_page_config(
+    page_title="Dashboard Armazém Benevenuto",
+    page_icon="logo (1080 x 1080px).png",
+    layout="wide"
+)
 st.title("Dashboard - Adoro Pizza")
+
+with st.sidebar:
+    st.image("logo (1920 x 1080px).png", use_container_width=True)
+    st.markdown("<br>", unsafe_allow_html=True)
 
 st.markdown("""
 <style>
