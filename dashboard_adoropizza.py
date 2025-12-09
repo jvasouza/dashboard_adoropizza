@@ -53,7 +53,7 @@ st.set_page_config(
 
 # LOGO NA SIDEBAR (canto superior esquerdo, pequena)
 with st.sidebar:
-    st.image("logo_sidebar.png", width=80)
+    st.image("logo sidebar.png", width=80)
     st.markdown("")  # só pra dar um respiro
 
 st.title("Dashboard - Adoro Pizza")
